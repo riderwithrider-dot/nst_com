@@ -1,0 +1,66 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function isTeamMember(teamId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid));
+    }
+
+    function isTeamManager(teamId) {
+      return isTeamMember(teamId)
+        && get(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid)).data.role == 'manager';
+    }
+
+    function keepsLockedSubteam() {
+      return !resource.data.subteamLocked
+        || request.resource.data.subteam == resource.data.subteam;
+    }
+
+    match /teams/{teamId} {
+      allow create: if signedIn();
+      allow read, update: if isTeamMember(teamId);
+
+      match /members/{uid} {
+        allow create: if isSelf(uid);
+        allow update: if (isSelf(uid) && keepsLockedSubteam()) || isTeamManager(teamId);
+        allow read: if isTeamMember(teamId);
+
+        match /weeks/{weekKey} {
+          allow read: if isSelf(uid);
+          allow write: if isSelf(uid);
+        }
+
+        match /notes/{noteId} {
+          allow read: if isSelf(uid);
+          allow write: if isSelf(uid);
+        }
+      }
+
+      match /weeks/{weekKey}/shared/{uid} {
+        allow read: if isTeamMember(teamId);
+        allow write: if isSelf(uid);
+      }
+
+      match /actionItems/{itemId} {
+        allow read, write: if isTeamMember(teamId);
+      }
+
+      match /kpis/{kpiId} {
+        allow read, write: if isTeamMember(teamId);
+      }
+
+      match /reports/{reportId} {
+        allow read, write: if isTeamMember(teamId);
+      }
+    }
+  }
+}
