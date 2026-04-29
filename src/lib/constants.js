@@ -39,6 +39,7 @@ export const CATEGORY_META = {
   week: { label: '이번 주', tone: 'amber' },
   month: { label: '이번 달', tone: 'blue' },
   quarter: { label: '2분기', tone: 'green' },
+  team: { label: '팀 업무', tone: 'teal' },
 }
 
 export const INITIAL_ACTION_ITEMS = [
@@ -204,7 +205,7 @@ export const INITIAL_KPIS = [
   {
     id: 'kpi_action_completion',
     sortOrder: 10,
-    label: '대표님 지시사항 완료율',
+    label: '진행 프로젝트 완료율',
     current: 0,
     target: 100,
     unit: '%',

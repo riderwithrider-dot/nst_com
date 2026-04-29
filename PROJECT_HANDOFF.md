@@ -98,3 +98,70 @@ GEMINI_MODEL=gemini-1.5-flash
 - 현재 로컬 샌드박스에서는 `esbuild` 하위 프로세스 실행 권한 문제로 `vite build`는 중단됨
 
 Vercel 또는 일반 로컬 Node 환경에서는 `npm install && npm run build`로 최종 빌드 확인이 필요합니다.
+
+## 재시도 금지 기록
+
+아래 항목은 실제 작업 중 막혔던 방식입니다. 같은 문제가 다시 나오면 같은 명령을 반복하지 말고, 바로 우회 경로로 전환합니다.
+
+### Git push/commit
+
+재시도 금지:
+
+- 현재 작업 폴더에서 `git add`, `git commit`, `git hash-object`를 반복 실행하지 않습니다.
+- 실패 메시지가 아래와 같으면 로컬 `.git` 권한 문제이므로 같은 명령을 반복해도 해결되지 않습니다.
+
+```text
+Unable to create .git/index.lock: Permission denied
+insufficient permission for adding an object to repository database .git/objects
+```
+
+원인:
+
+- `.git/index.lock` 파일이 실제로 남아 있지 않아도 `.git/index` 또는 `.git/objects` 쓰기 권한이 막혀 있을 수 있습니다.
+- OneDrive, 백신, 샌드박스 권한, 이전 Git 프로세스 잠금이 원인일 수 있습니다.
+
+대응:
+
+- GitHub 저장소 접근 권한이 열려 있으면 GitHub API/커넥터로 직접 커밋합니다.
+- 로컬에서 처리해야 하면 권한이 정상인 새 폴더에 저장소를 다시 clone한 뒤 수정 파일만 복사해 커밋합니다.
+- 기존 작업 폴더의 `.git` 파일을 임의 삭제하거나 강제 초기화하지 않습니다.
+
+### GitHub 저장소 권한
+
+재시도 금지:
+
+- Codex GitHub 앱에서 `riderwithrider-dot/nst_com` 저장소가 보이지 않는 상태로 push를 반복하지 않습니다.
+- 현재 확인된 앱 접근 가능 저장소가 `riderwithrider-dot/nonion-marketing`뿐이라면, `nst_com`에는 앱 권한이 없는 상태입니다.
+
+대응:
+
+- GitHub에서 Codex/GitHub App 설치 권한에 `riderwithrider-dot/nst_com` 저장소를 추가합니다.
+- 권한 추가 전에는 다른 저장소에 임의 push하지 않습니다.
+
+### Vite 로컬 서버
+
+재시도 금지:
+
+- `Start-Process`로 Vite를 숨김 실행하는 방식을 반복하지 않습니다.
+- 이 환경에서는 숨김 실행 또는 build 중 아래 오류가 반복될 수 있습니다.
+
+```text
+failed to load config from vite.config.js
+Error: spawn EPERM
+```
+
+대응:
+
+- 일반 터미널에서 `npm run dev`를 직접 실행해 서버를 띄웁니다.
+- 로컬 build 검증이 필요하면 권한이 정상인 일반 Node 환경 또는 Vercel 배포 환경에서 확인합니다.
+- 샌드박스에서 `npm run build`가 `spawn EPERM`으로 실패해도, 먼저 Babel parser 문법 검사를 통해 코드 문법을 확인합니다.
+
+### 임시 로그 파일
+
+재시도 금지:
+
+- `vite-*.log` 임시 로그 파일을 Git에 포함하지 않습니다.
+
+대응:
+
+- 커밋 전 `git status --short`에서 `vite-*.log`가 보이면 커밋 대상에서 제외하거나 삭제합니다.

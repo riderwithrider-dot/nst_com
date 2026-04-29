@@ -169,6 +169,46 @@ export async function addSharedTaskComment(teamId, weekKey, memberUid, taskId, c
   }, { merge: true })
 }
 
+export async function updateSharedTaskFields(teamId, weekKey, memberUid, taskId, patch) {
+  assertDb()
+  const now = new Date().toISOString()
+  const sharedRef = doc(db, 'teams', teamId, 'weeks', weekKey, 'shared', memberUid)
+  const memberWeekRef = doc(db, 'teams', teamId, 'members', memberUid, 'weeks', weekKey)
+
+  const updateItems = items => (items || []).map(item => {
+    if (item.id !== taskId) return item
+    const nextStatus = patch.status || item.status
+    return {
+      ...item,
+      ...patch,
+      completedAt: nextStatus === 'done' ? (item.completedAt || now) : null,
+      updatedAt: now,
+    }
+  })
+
+  const sharedSnap = await getDoc(sharedRef)
+  if (!sharedSnap.exists()) {
+    throw new Error('팀 공유 업무를 찾을 수 없습니다.')
+  }
+  const nextSharedItems = updateItems(sharedSnap.data().items)
+  const doneCount = nextSharedItems.filter(item => item.status === 'done').length
+  const completionRate = nextSharedItems.length > 0 ? Math.round((doneCount / nextSharedItems.length) * 100) : 0
+
+  await setDoc(sharedRef, {
+    items: nextSharedItems,
+    completionRate,
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
+
+  const memberWeekSnap = await getDoc(memberWeekRef)
+  if (memberWeekSnap.exists()) {
+    await setDoc(memberWeekRef, {
+      items: updateItems(memberWeekSnap.data().items),
+      updatedAt: serverTimestamp(),
+    }, { merge: true })
+  }
+}
+
 export function subscribeTeamFeed(teamId, weekKey, callback) {
   assertDb()
   const sharedRef = collection(db, 'teams', teamId, 'weeks', weekKey, 'shared')

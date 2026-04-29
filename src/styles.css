@@ -640,6 +640,10 @@ textarea:focus {
   margin-top: 10px;
 }
 
+.progress-list {
+  margin-bottom: 16px;
+}
+
 .comment-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -668,6 +672,38 @@ textarea:focus {
 
 .comment-item p {
   grid-column: 1 / -1;
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.today-highlight-list {
+  display: grid;
+  gap: 8px;
+}
+
+.today-highlight-item {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.today-highlight-item div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.today-highlight-item span {
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.today-highlight-item p {
   margin: 0;
   color: var(--text);
   overflow-wrap: anywhere;

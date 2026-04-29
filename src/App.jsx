@@ -40,6 +40,7 @@ import {
   subscribeTeamFeed,
   subscribeWeekTasks,
   updateActionItemStatus,
+  updateSharedTaskFields,
   updateKpiValue,
   updateMemberSubteam,
 } from './lib/db'
@@ -126,7 +127,7 @@ function LoginScreen({ error }) {
       <section className="login-panel">
         <div className="brand-mark">N</div>
         <h1>NST BIO 커머스팀 주간업무</h1>
-        <p>개인 실행, 팀 공유, 대표님 지시사항, AI 보고 초안을 한 곳에서 관리합니다.</p>
+        <p>개인 실행, 팀 공유, 진행 프로젝트, AI 보고 초안을 한 곳에서 관리합니다.</p>
         {error && <div className="alert error">{error}</div>}
         <button className="primary-action" onClick={handleLogin} disabled={loading}>
           <ShieldAlert size={18} />
@@ -391,7 +392,7 @@ function TeamHome({ weekLabel, teamFeed, actionItems, kpis }) {
         <MetricCard icon={Users} label="공유 팀원" value={`${filteredTeamFeed.length}명`} helper={subteamFilter === 'all' ? weekLabel : getSubteamLabel(subteamFilter)} tone="blue" />
         <MetricCard icon={CheckCircle2} label="공유 업무 완료율" value={`${percent(doneTasks.length, sharedTasks.length)}%`} helper={`${doneTasks.length}/${sharedTasks.length}건`} tone="green" />
         <MetricCard icon={AlertTriangle} label="개입 필요" value={`${blockedTasks.length + lateTasks.length + dueSoonTasks.length}건`} helper={`막힘 ${blockedTasks.length} · 지연 ${lateTasks.length} · 임박 ${dueSoonTasks.length}`} tone="red" />
-        <MetricCard icon={Flag} label="지시사항 완료율" value={`${actionPct}%`} helper={`${actionDone}/${actionItems.length}개`} tone="teal" />
+        <MetricCard icon={Flag} label="진행 프로젝트 완료율" value={`${actionPct}%`} helper={`${actionDone}/${actionItems.length}개`} tone="teal" />
       </section>
 
       <SubteamFilter value={subteamFilter} onChange={setSubteamFilter} />
@@ -556,7 +557,7 @@ function ActionItemDetail({ item, user, onAddComment }) {
             <p>{comment.text}</p>
           </article>
         ))}
-        {(item.comments || []).length === 0 && <EmptyText text="이 지시사항에 남긴 코멘트가 없습니다." />}
+        {(item.comments || []).length === 0 && <EmptyText text="이 프로젝트에 남긴 코멘트가 없습니다." />}
       </div>
     </section>
   )
@@ -572,7 +573,7 @@ function CommentInboxRow({ comment, active, onClick }) {
         <span>{comment.authorName || '작성자'} · {formatCommentTime(comment.createdAt)}</span>
       </div>
       <div className="badge-row">
-        <Badge tone="blue">{isAction ? '지시사항' : '팀 업무'}</Badge>
+        <Badge tone="blue">{isAction ? '진행 프로젝트' : '팀 업무'}</Badge>
         <Badge tone="gray">{source.title}</Badge>
         <Badge tone="gray">{source.subteamLabel || getSubteamLabel(source.subteam || assigneeToSubteam(source.assignee))}</Badge>
         <Badge tone={STATUS_META[source.status]?.tone}>{STATUS_META[source.status]?.label || source.status}</Badge>
@@ -730,6 +731,36 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel }) {
     }
   }
 
+  async function addTaskProgress(taskId, text) {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    const now = new Date().toISOString()
+    const next = tasks.map(task => {
+      if (task.id !== taskId) return task
+      return {
+        ...task,
+        progressLogs: [
+          ...(task.progressLogs || []),
+          {
+            id: generateId('progress'),
+            text: trimmed,
+            dateKey: getTodayKey(),
+            authorUid: user.uid,
+            authorName: user.displayName || user.email,
+            createdAt: now,
+          },
+        ],
+        updatedAt: now,
+      }
+    })
+
+    try {
+      await persist(next)
+    } catch (error) {
+      setTaskError(error.message || '오늘 진행내용 저장에 실패했습니다.')
+    }
+  }
+
   async function deleteTaskComment(taskId, commentId) {
     const next = tasks.map(task => {
       if (task.id !== taskId) return task
@@ -771,6 +802,7 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel }) {
   const activeTasks = tasks.filter(task => task.status !== 'done')
   const completedTasks = tasks.filter(task => task.status === 'done')
   const currentRate = percent(completedTasks.length, tasks.length)
+  const todayHighlights = getTodayProgressLogs(tasks)
 
   return (
     <main className="content-grid personal-layout">
@@ -844,11 +876,16 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel }) {
                 expanded={openTaskId === task.id}
                 onToggleExpand={() => setOpenTaskId(openTaskId === task.id ? null : task.id)}
                 onAddComment={text => addTaskComment(task.id, text)}
+                onAddProgress={text => addTaskProgress(task.id, text)}
                 onDeleteComment={commentId => deleteTaskComment(task.id, commentId)}
               />
             ))}
             {activeTasks.length === 0 && <EmptyText text="진행 중인 이번 주 업무가 없습니다." />}
           </div>
+        </Panel>
+
+        <Panel title="오늘의 주요업무" icon={Clock}>
+          <TodayHighlights logs={todayHighlights} />
         </Panel>
 
         <Panel title="완료 업무 히스토리" icon={RefreshCcw}>
@@ -949,20 +986,40 @@ function AINote({ user, weekKey, weekLabel, completedTasks }) {
   )
 }
 
+function TodayHighlights({ logs }) {
+  if (logs.length === 0) {
+    return <EmptyText text="오늘 입력된 주요업무가 없습니다. 각 업무를 눌러 오늘 진행내용을 입력해보세요." />
+  }
+
+  return (
+    <div className="today-highlight-list">
+      {logs.map(log => (
+        <article className="today-highlight-item" key={`${log.taskId}-${log.id}`}>
+          <div>
+            <Badge tone="teal">{log.taskTitle}</Badge>
+            {log.impact && <Badge tone="green">{log.impact}</Badge>}
+            <span>{formatCommentTime(log.createdAt)}</span>
+          </div>
+          <p>{log.text}</p>
+        </article>
+      ))}
+    </div>
+  )
+}
+
 function TeamBoard({ user, teamFeed, actionItems, kpis, canManage }) {
   const [category, setCategory] = useState('all')
   const [status, setStatus] = useState('all')
   const [subteamFilter, setSubteamFilter] = useState('all')
   const [inboxMode, setInboxMode] = useState('comments')
-  const [selectedTaskKey, setSelectedTaskKey] = useState(null)
   const [selectedActionId, setSelectedActionId] = useState(null)
-  const filtered = actionItems.filter(item => {
+  const filteredActionItems = actionItems.filter(item => {
     const categoryMatch = category === 'all' || item.category === category
     const statusMatch = status === 'all' || (item.status || (item.done ? 'done' : 'todo')) === status
     const itemSubteam = item.subteam || assigneeToSubteam(item.assignee)
     const subteamMatch = subteamFilter === 'all' || itemSubteam === subteamFilter
     return categoryMatch && statusMatch && subteamMatch
-  })
+  }).map(item => ({ ...item, sourceType: 'action', actionKey: `action-${item.id}` }))
   const filteredTeamFeed = subteamFilter === 'all'
     ? teamFeed
     : teamFeed.filter(member => member.subteam === subteamFilter)
@@ -974,6 +1031,20 @@ function TeamBoard({ user, teamFeed, actionItems, kpis, canManage }) {
     subteam: member.subteam,
     subteamLabel: member.subteamLabel || getSubteamLabel(member.subteam),
   })))
+  const filteredSharedActionItems = sharedTasks
+    .filter(task => {
+      const categoryMatch = category === 'all' || category === 'team'
+      const statusMatch = status === 'all' || task.status === status
+      return categoryMatch && statusMatch
+    })
+    .map(task => ({
+      ...task,
+      sourceType: 'shared',
+      actionKey: `shared-${task.memberUid}-${task.id}`,
+      category: 'team',
+      assignee: task.subteamLabel || getSubteamLabel(task.subteam),
+    }))
+  const actionPlanItems = [...filteredActionItems, ...filteredSharedActionItems]
   const activeSharedTasks = sharedTasks
     .filter(task => task.status !== 'done')
     .sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority) || dueSortValue(a.dueDate) - dueSortValue(b.dueDate))
@@ -982,7 +1053,7 @@ function TeamBoard({ user, teamFeed, actionItems, kpis, canManage }) {
     .sort((a, b) => taskFocusRank(a) - taskFocusRank(b))
   const recentComments = [
     ...sharedTasks.flatMap(task => (task.comments || []).map(comment => ({ ...comment, task, sourceType: 'shared' }))),
-    ...filtered.flatMap(item => (item.comments || []).map(comment => ({
+    ...filteredActionItems.flatMap(item => (item.comments || []).map(comment => ({
       ...comment,
       item: {
         ...item,
@@ -994,20 +1065,11 @@ function TeamBoard({ user, teamFeed, actionItems, kpis, canManage }) {
   ]
     .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
     .slice(0, 12)
-  const selectedTask = activeSharedTasks.find(task => taskKey(task) === selectedTaskKey) || activeSharedTasks[0] || null
-
   useEffect(() => {
-    const fallbackTask = recentComments[0]?.task || priorityTasks[0]
-    if (fallbackTask && !sharedTasks.some(task => taskKey(task) === selectedTaskKey)) {
-      setSelectedTaskKey(taskKey(fallbackTask))
-    }
-  }, [selectedTaskKey, subteamFilter, teamFeed])
-
-  useEffect(() => {
-    if (selectedActionId && !filtered.some(item => item.id === selectedActionId)) {
+    if (selectedActionId && !actionPlanItems.some(item => item.actionKey === selectedActionId)) {
       setSelectedActionId(null)
     }
-  }, [selectedActionId, filtered])
+  }, [selectedActionId, actionPlanItems])
 
   async function handleAddSharedComment(task, text) {
     const now = new Date().toISOString()
@@ -1021,6 +1083,10 @@ function TeamBoard({ user, teamFeed, actionItems, kpis, canManage }) {
   }
 
   async function handleAddActionComment(item, text) {
+    if (item.sourceType === 'shared') {
+      await handleAddSharedComment(item, text)
+      return
+    }
     const now = new Date().toISOString()
     await addActionItemComment(DEFAULT_TEAM_ID, item.id, {
       id: generateId('comment'),
@@ -1031,14 +1097,27 @@ function TeamBoard({ user, teamFeed, actionItems, kpis, canManage }) {
     })
   }
 
+  async function handleActionStatusChange(item, nextStatus) {
+    if (item.sourceType === 'shared') {
+      await updateSharedTaskFields(DEFAULT_TEAM_ID, weekKey, item.memberUid, item.id, { status: nextStatus })
+      return
+    }
+    await updateActionItemStatus(DEFAULT_TEAM_ID, item.id, nextStatus)
+  }
+
   function focusActionItem(itemId) {
-    setSelectedActionId(itemId)
+    const actionKey = String(itemId).startsWith('action-') || String(itemId).startsWith('shared-') ? itemId : `action-${itemId}`
+    setSelectedActionId(actionKey)
     window.setTimeout(() => {
-      document.getElementById(`action-item-${itemId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      document.getElementById(`action-item-${actionKey}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }, 80)
   }
 
-  const selectedAction = filtered.find(item => item.id === selectedActionId) || null
+  function focusSharedProject(task) {
+    focusActionItem(`shared-${task.memberUid}-${task.id}`)
+  }
+
+  const selectedAction = actionPlanItems.find(item => item.actionKey === selectedActionId) || null
 
   return (
     <main className="view-stack">
@@ -1046,7 +1125,7 @@ function TeamBoard({ user, teamFeed, actionItems, kpis, canManage }) {
       <SubteamFilter value={subteamFilter} onChange={setSubteamFilter} />
 
       <section className="content-grid two">
-        <Panel title="대표님 지시사항 액션플랜" icon={Flag}>
+        <Panel title="진행 프로젝트" icon={Flag}>
           <div className="filter-row">
             {['all', ...Object.keys(CATEGORY_META)].map(key => (
               <button key={key} className={category === key ? 'active' : ''} onClick={() => setCategory(key)}>
@@ -1062,15 +1141,15 @@ function TeamBoard({ user, teamFeed, actionItems, kpis, canManage }) {
             ))}
           </div>
           <div className="item-list">
-            {filtered.map(item => (
-              <div className="action-with-detail" id={`action-item-${item.id}`} key={item.id}>
+            {actionPlanItems.map(item => (
+              <div className="action-with-detail" id={`action-item-${item.actionKey}`} key={item.actionKey}>
                 <ActionRow
                   item={item}
-                  active={selectedAction?.id === item.id}
-                  onClick={() => setSelectedActionId(selectedAction?.id === item.id ? null : item.id)}
-                  onStatusChange={canManage ? next => updateActionItemStatus(DEFAULT_TEAM_ID, item.id, next) : null}
+                  active={selectedAction?.actionKey === item.actionKey}
+                  onClick={() => setSelectedActionId(selectedAction?.actionKey === item.actionKey ? null : item.actionKey)}
+                  onStatusChange={(item.sourceType === 'shared' || canManage) ? next => handleActionStatusChange(item, next) : null}
                 />
-                {selectedAction?.id === item.id && (
+                {selectedAction?.actionKey === item.actionKey && (
                   <ActionItemDetail
                     item={selectedAction}
                     user={user}
@@ -1079,7 +1158,7 @@ function TeamBoard({ user, teamFeed, actionItems, kpis, canManage }) {
                 )}
               </div>
             ))}
-            {filtered.length === 0 && <EmptyText text="조건에 맞는 지시사항이 없습니다." />}
+            {actionPlanItems.length === 0 && <EmptyText text="조건에 맞는 진행 프로젝트가 없습니다." />}
           </div>
         </Panel>
 
@@ -1098,14 +1177,14 @@ function TeamBoard({ user, teamFeed, actionItems, kpis, canManage }) {
                 key={`${comment.sourceType}-${comment.task ? taskKey(comment.task) : comment.item.id}-${comment.id}`}
                 comment={comment}
                 active={comment.sourceType === 'shared'
-                  ? taskKey(selectedTask) === taskKey(comment.task)
-                  : selectedActionId === comment.item.id}
+                  ? selectedActionId === `shared-${comment.task.memberUid}-${comment.task.id}`
+                  : selectedActionId === comment.item.actionKey}
                 onClick={() => {
                   if (comment.sourceType === 'shared') {
-                    setSelectedTaskKey(taskKey(comment.task))
+                    focusSharedProject(comment.task)
                     return
                   }
-                  focusActionItem(comment.item.id)
+                  focusActionItem(comment.item.actionKey || comment.item.id)
                 }}
               />
             ))}
@@ -1115,19 +1194,12 @@ function TeamBoard({ user, teamFeed, actionItems, kpis, canManage }) {
               <FocusTaskRow
                 key={taskKey(task)}
                 task={task}
-                active={taskKey(selectedTask) === taskKey(task)}
-                onClick={() => setSelectedTaskKey(taskKey(task))}
+                active={selectedActionId === `shared-${task.memberUid}-${task.id}`}
+                onClick={() => focusSharedProject(task)}
               />
             ))}
             {inboxMode === 'priority' && priorityTasks.length === 0 && <EmptyText text="해당 팀의 공유 진행 업무가 없습니다." />}
           </div>
-          {selectedTask && (
-            <TeamTaskDetail
-              task={selectedTask}
-              user={user}
-              onAddComment={text => handleAddSharedComment(selectedTask, text)}
-            />
-          )}
         </Panel>
       </section>
 
@@ -1199,7 +1271,7 @@ function ReportBoard({ weekLabel, teamFeed, actionItems, kpis }) {
       <Panel title="AI 보고 초안 생성" icon={Bot}>
         <div className="report-source">
           <MetricCard icon={Users} label="팀 공유" value={`${teamFeed.length}명`} helper="이번 주 기준" tone="blue" />
-          <MetricCard icon={Flag} label="지시사항" value={`${actionItems.length}개`} helper="대표님 액션플랜" tone="teal" />
+          <MetricCard icon={Flag} label="진행 프로젝트" value={`${actionItems.length}개`} helper="프로젝트 기준" tone="teal" />
           <MetricCard icon={BarChart3} label="KPI" value={`${kpis.length}개`} helper="운영 지표" tone="green" />
         </div>
         <button className="primary-action wide" onClick={handleGenerate} disabled={loading}>
@@ -1231,12 +1303,14 @@ function ReportBoard({ weekLabel, teamFeed, actionItems, kpis }) {
   )
 }
 
-function TaskEditor({ task, onChange, onComplete, onDelete, expanded, onToggleExpand, onAddComment, onDeleteComment }) {
+function TaskEditor({ task, onChange, onComplete, onDelete, expanded, onToggleExpand, onAddComment, onAddProgress, onDeleteComment }) {
   const [commentDraft, setCommentDraft] = useState('')
+  const [progressDraft, setProgressDraft] = useState('')
   const [draftStatus, setDraftStatus] = useState(task.status)
   const [draftPriority, setDraftPriority] = useState(task.priority)
   const [draftIsFocus, setDraftIsFocus] = useState(Boolean(task.isFocus))
   const due = daysUntil(task.dueDate)
+  const todayLogs = (task.progressLogs || []).filter(log => log.dateKey === getTodayKey())
 
   useEffect(() => {
     setDraftStatus(task.status)
@@ -1249,6 +1323,13 @@ function TaskEditor({ task, onChange, onComplete, onDelete, expanded, onToggleEx
     if (!commentDraft.trim()) return
     await onAddComment(commentDraft)
     setCommentDraft('')
+  }
+
+  async function handleAddProgress(event) {
+    event.preventDefault()
+    if (!progressDraft.trim()) return
+    await onAddProgress(progressDraft)
+    setProgressDraft('')
   }
 
   async function handleConfirmStatus() {
@@ -1273,6 +1354,7 @@ function TaskEditor({ task, onChange, onComplete, onDelete, expanded, onToggleEx
             {task.isFocus && <Badge tone="teal">우선순위</Badge>}
             <Badge tone={due !== null && due < 0 && task.status !== 'done' ? 'red' : 'gray'}>{formatDue(task.dueDate)}</Badge>
             {task.impact && <Badge tone="green">{task.impact}</Badge>}
+            {(task.progressLogs || []).length > 0 && <Badge tone="teal">진행 {(task.progressLogs || []).length}</Badge>}
             <Badge tone={(task.comments || []).length > 0 ? 'blue' : 'gray'}>
               코멘트 {(task.comments || []).length}
             </Badge>
@@ -1305,6 +1387,34 @@ function TaskEditor({ task, onChange, onComplete, onDelete, expanded, onToggleEx
       </div>
       {expanded && (
         <div className="comment-panel">
+          <div className="comment-title">
+            <Clock size={16} />
+            <strong>{task.title} 오늘 진행내용</strong>
+          </div>
+          <form className="comment-form" onSubmit={handleAddProgress}>
+            <input
+              value={progressDraft}
+              onChange={event => setProgressDraft(event.target.value)}
+              placeholder="오늘 이 업무에서 진행한 내용, 산출물, 결정사항을 입력하세요"
+            />
+            <button className="secondary-action" type="submit">
+              <Plus size={15} />
+              등록
+            </button>
+          </form>
+          <div className="comment-list progress-list">
+            {todayLogs.map(log => (
+              <article className="comment-item progress-item" key={log.id}>
+                <div>
+                  <strong>{log.authorName || '작성자'}</strong>
+                  <span>{formatCommentTime(log.createdAt)}</span>
+                </div>
+                <p>{log.text}</p>
+              </article>
+            ))}
+            {todayLogs.length === 0 && <EmptyText text="오늘 입력한 진행내용이 없습니다." />}
+          </div>
+
           <div className="comment-title">
             <MessageSquareText size={16} />
             <strong>{task.title} 코멘트</strong>
@@ -1626,6 +1736,27 @@ function taskFocusRank(task) {
 function taskKey(task) {
   if (!task) return ''
   return `${task.memberUid || task.ownerUid || 'member'}-${task.id}`
+}
+
+function getTodayKey(date = new Date()) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function getTodayProgressLogs(tasks) {
+  const todayKey = getTodayKey()
+  return tasks
+    .flatMap(task => (task.progressLogs || [])
+      .filter(log => log.dateKey === todayKey)
+      .map(log => ({
+        ...log,
+        taskId: task.id,
+        taskTitle: task.title,
+        impact: task.impact,
+      })))
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
 }
 
 function normalizeAssignee(value) {
