@@ -1007,7 +1007,7 @@ function TodayHighlights({ logs }) {
   )
 }
 
-function TeamBoard({ user, teamFeed, actionItems, kpis, canManage }) {
+function TeamBoard({ user, weekKey, teamFeed, actionItems, kpis, canManage }) {
   const [category, setCategory] = useState('all')
   const [status, setStatus] = useState('all')
   const [subteamFilter, setSubteamFilter] = useState('all')
