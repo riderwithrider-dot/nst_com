@@ -18,6 +18,7 @@ import {
   Plus,
   RefreshCcw,
   Send,
+  Settings,
   ShieldAlert,
   Trash2,
   Users,
@@ -26,25 +27,52 @@ import { auth, googleProvider, isFirebaseConfigured } from './lib/firebase'
 import {
   addIdeaNote,
   addActionItemComment,
+  addActionItemCommentReply,
   addSharedTaskComment,
+  addSharedTaskCommentReply,
+  createActionItem,
+  createKpi,
+  deleteStorageFiles,
+  deleteActionItemComment,
   deleteIdeaNote,
+  deleteKpi,
+  deleteSharedTaskComment,
   ensureTeamAndMember,
   getTaskHistory,
   saveWeekTasks,
+  saveDailyReport,
   seedInitialData,
   shareWeekToTeam,
   subscribeActionItems,
   subscribeIdeaNotes,
   subscribeKpis,
+  subscribeDailyReport,
   subscribeMemberProfile,
+  subscribeMembers,
   subscribeTeamFeed,
   subscribeWeekTasks,
   updateActionItemStatus,
+  updateActionItemFields,
   updateSharedTaskFields,
   updateKpiValue,
+  updateMemberProfile,
   updateMemberSubteam,
+  uploadProgressImages,
 } from './lib/db'
-import { DEFAULT_TEAM_ID, CATEGORY_META, CHANNEL_STRATEGIES, PRIORITY_META, STATUS_META, SUBTEAMS, getSubteamLabel, isManagerUser } from './lib/constants'
+import {
+  DEFAULT_POST_PERMISSIONS,
+  DEFAULT_TEAM_ID,
+  CATEGORY_META,
+  CHANNEL_STRATEGIES,
+  JOB_TITLES,
+  MEMBER_ROLES,
+  POST_PERMISSION_META,
+  PRIORITY_META,
+  STATUS_META,
+  SUBTEAMS,
+  getSubteamLabel,
+  isManagerUser,
+} from './lib/constants'
 import { daysUntil, formatDate, generateId, getWeekKey, weekKeyToLabel } from './lib/date'
 import { requestGemini } from './lib/ai'
 
@@ -53,7 +81,10 @@ const VIEWS = [
   { id: 'personal', label: '내 업무', icon: ListChecks },
   { id: 'team', label: '팀 보드', icon: Users },
   { id: 'report', label: '보고 초안', icon: ClipboardList, managerOnly: true },
+  { id: 'admin', label: '구성원 관리', icon: Settings, managerOnly: true },
 ]
+
+const MAX_PROGRESS_IMAGES = 3
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -201,10 +232,10 @@ function TeamSelectionGate({ user, onSelect }) {
 }
 
 function Dashboard({ user, bootError }) {
-  const canManage = isManagerUser(user)
+  const [memberProfile, setMemberProfile] = useState(null)
+  const canManage = isManagerUser(user) || memberProfile?.role === 'manager'
   const availableViews = VIEWS.filter(view => !view.managerOnly || canManage)
   const [activeView, setActiveView] = useState(canManage ? 'home' : 'personal')
-  const [memberProfile, setMemberProfile] = useState(null)
   const canEditSubteam = memberProfile?.role === 'manager'
   const [profileLoading, setProfileLoading] = useState(true)
   const [teamFeed, setTeamFeed] = useState([])
@@ -294,8 +325,8 @@ function Dashboard({ user, bootError }) {
           </div>
           <div className="user-tools">
             {user.photoURL ? <img src={user.photoURL} alt="" /> : <div className="avatar">{user.displayName?.[0] || 'N'}</div>}
-            <span>{user.displayName || user.email}</span>
-            <Badge tone={canManage ? 'green' : 'gray'}>{canManage ? '팀장' : '팀원'}</Badge>
+            <span>{getProfileName(user, memberProfile)}</span>
+            <Badge tone={canManage ? 'green' : 'gray'}>{memberProfile?.title || (canManage ? '팀장' : '팀원')}</Badge>
             {canEditSubteam ? (
               <select className="subteam-select compact" value={memberProfile.subteam} onChange={event => handleSubteamChange(event.target.value)}>
                 {SUBTEAMS.map(team => <option key={team.id} value={team.id}>{team.label}</option>)}
@@ -313,10 +344,14 @@ function Dashboard({ user, bootError }) {
 
         {canManage && activeView === 'home' && (
           <TeamHome
+            user={user}
+            weekKey={weekKey}
             weekLabel={weekLabel}
             teamFeed={teamFeed}
             actionItems={actionItems}
             kpis={kpis}
+            canManage={canManage}
+            memberProfile={memberProfile}
           />
         )}
         {activeView === 'personal' && (
@@ -341,12 +376,154 @@ function Dashboard({ user, bootError }) {
             kpis={kpis}
           />
         )}
+        {canManage && activeView === 'admin' && (
+          <AdminBoard currentUser={user} />
+        )}
       </div>
     </div>
   )
 }
 
-function TeamHome({ weekLabel, teamFeed, actionItems, kpis }) {
+function AdminBoard({ currentUser }) {
+  const [members, setMembers] = useState([])
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+
+  useEffect(() => subscribeMembers(DEFAULT_TEAM_ID, setMembers), [])
+
+  async function handleUpdate(uid, patch) {
+    setError('')
+    setMessage('')
+    try {
+      await updateMemberProfile(DEFAULT_TEAM_ID, uid, patch)
+      setMessage('구성원 정보가 저장되었습니다.')
+    } catch (err) {
+      setError(err.message || '구성원 정보 저장에 실패했습니다.')
+    }
+  }
+
+  return (
+    <main className="view-stack">
+      <Panel title="구성원 권한 관리" icon={Settings}>
+        <p className="section-help">관리자는 로그인 계정별 표시 이름, 소속팀, 직책, 역할, 게시글 권한을 조정할 수 있습니다.</p>
+        {error && <div className="alert error slim">{error}</div>}
+        {message && <div className="alert slim">{message}</div>}
+        <div className="admin-member-list">
+          {members.map(member => (
+            <MemberAdminCard
+              key={member.uid}
+              member={member}
+              isCurrentUser={member.uid === currentUser.uid}
+              onUpdate={patch => handleUpdate(member.uid, patch)}
+            />
+          ))}
+          {members.length === 0 && <EmptyText text="아직 로그인한 구성원이 없습니다." />}
+        </div>
+      </Panel>
+    </main>
+  )
+}
+
+function MemberAdminCard({ member, isCurrentUser, onUpdate }) {
+  const [draft, setDraft] = useState(() => ({
+    displayName: member.displayName || '',
+    subteam: member.subteam || 'commerce',
+    title: member.title || '팀원',
+    role: member.role || 'member',
+    permissions: getMemberPermissions(member),
+  }))
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setDraft({
+      displayName: member.displayName || '',
+      subteam: member.subteam || 'commerce',
+      title: member.title || '팀원',
+      role: member.role || 'member',
+      permissions: getMemberPermissions(member),
+    })
+  }, [member])
+
+  async function handleSave(event) {
+    event.preventDefault()
+    setSaving(true)
+    try {
+      await onUpdate({
+        displayName: draft.displayName.trim() || member.email || '이름 없음',
+        subteam: draft.subteam,
+        title: draft.title,
+        role: draft.role,
+        permissions: draft.permissions,
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function togglePermission(key) {
+    setDraft({
+      ...draft,
+      permissions: {
+        ...draft.permissions,
+        [key]: !draft.permissions[key],
+      },
+    })
+  }
+
+  return (
+    <form className="admin-member-card" onSubmit={handleSave}>
+      <div className="admin-member-head">
+        {member.photoURL ? <img src={member.photoURL} alt="" /> : <div className="avatar">{draft.displayName?.[0] || 'N'}</div>}
+        <div>
+          <strong>{member.email || '이메일 없음'}</strong>
+          <span>{isCurrentUser ? '현재 로그인 계정' : member.uid}</span>
+        </div>
+      </div>
+      <div className="admin-member-fields">
+        <label>
+          닉네임
+          <input value={draft.displayName} onChange={event => setDraft({ ...draft, displayName: event.target.value })} />
+        </label>
+        <label>
+          부서
+          <select value={draft.subteam} onChange={event => setDraft({ ...draft, subteam: event.target.value })}>
+            {SUBTEAMS.map(team => <option key={team.id} value={team.id}>{team.label}</option>)}
+          </select>
+        </label>
+        <label>
+          직책
+          <select value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })}>
+            {JOB_TITLES.map(title => <option key={title} value={title}>{title}</option>)}
+          </select>
+        </label>
+        <label>
+          역할
+          <select value={draft.role} onChange={event => setDraft({ ...draft, role: event.target.value })}>
+            {MEMBER_ROLES.map(role => <option key={role.id} value={role.id}>{role.label}</option>)}
+          </select>
+        </label>
+      </div>
+      <div className="permission-grid">
+        {POST_PERMISSION_META.map(permission => (
+          <label className="check-toggle" key={permission.key}>
+            <input
+              type="checkbox"
+              checked={Boolean(draft.permissions[permission.key])}
+              onChange={() => togglePermission(permission.key)}
+            />
+            {permission.label}
+          </label>
+        ))}
+      </div>
+      <button className="secondary-action" type="submit" disabled={saving}>
+        <Check size={15} />
+        {saving ? '저장 중' : '저장'}
+      </button>
+    </form>
+  )
+}
+
+function TeamHome({ user, weekKey, weekLabel, teamFeed, actionItems, kpis, canManage }) {
   const [subteamFilter, setSubteamFilter] = useState('all')
   const [selectedTaskKey, setSelectedTaskKey] = useState(null)
   const filteredTeamFeed = subteamFilter === 'all'
@@ -386,6 +563,20 @@ function TeamHome({ weekLabel, teamFeed, actionItems, kpis }) {
     }
   }, [selectedTaskKey, focusItems])
 
+  async function handleDeleteSharedComment(task, commentId) {
+    await deleteSharedTaskComment(DEFAULT_TEAM_ID, weekKey, task.memberUid, task.id, commentId)
+  }
+
+  async function handleReplySharedComment(task, commentId, text) {
+    await addSharedTaskCommentReply(DEFAULT_TEAM_ID, weekKey, task.memberUid, task.id, commentId, {
+      id: generateId('reply'),
+      text: text.trim(),
+      authorUid: user.uid,
+      authorName: user.displayName || user.email,
+      createdAt: new Date().toISOString(),
+    })
+  }
+
   return (
     <main className="view-stack">
       <section className="metric-grid">
@@ -401,16 +592,25 @@ function TeamHome({ weekLabel, teamFeed, actionItems, kpis }) {
         <Panel title="이번 주 집중 큐" icon={Clock}>
           <div className="item-list">
             {focusItems.map(item => (
-              <FocusTaskRow
-                key={`${item.memberUid}-${item.id}`}
-                task={item}
-                active={taskKey(selectedTask) === taskKey(item)}
-                onClick={() => setSelectedTaskKey(taskKey(item))}
-              />
+              <div className="action-with-detail" key={`${item.memberUid}-${item.id}`}>
+                <FocusTaskRow
+                  task={item}
+                  active={taskKey(selectedTask) === taskKey(item)}
+                  onClick={() => setSelectedTaskKey(taskKey(item))}
+                />
+                {taskKey(selectedTask) === taskKey(item) && (
+                  <TeamTaskDetail
+                    task={item}
+                    user={user}
+                    canManage={canManage}
+                    onReplyComment={(commentId, text) => handleReplySharedComment(item, commentId, text)}
+                    onDeleteComment={commentId => handleDeleteSharedComment(item, commentId)}
+                  />
+                )}
+              </div>
             ))}
             {focusItems.length === 0 && <EmptyText text="팀원이 공유한 진행 업무가 없습니다." />}
           </div>
-          {selectedTask && <TeamTaskDetail task={selectedTask} />}
         </Panel>
 
         <Panel title="마감·병목 신호" icon={Activity}>
@@ -447,10 +647,14 @@ function FocusTaskRow({ task, active, onClick }) {
   )
 }
 
-function TeamTaskDetail({ task, user, onAddComment }) {
+function TeamTaskDetail({ task, user, onAddComment, onReplyComment, onDeleteComment, canManage = false }) {
   const [commentDraft, setCommentDraft] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const isOwner = task.memberUid === user?.uid || task.ownerUid === user?.uid
+  const visibleComments = isOwner
+    ? (task.comments || []).filter(comment => comment.authorUid !== user?.uid)
+    : (task.comments || [])
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -476,7 +680,7 @@ function TeamTaskDetail({ task, user, onAddComment }) {
           <span>{task.subteamLabel || getSubteamLabel(task.subteam)} · {task.memberName || task.ownerName || '담당자 미지정'} · {task.detail || '상세 내용 없음'}</span>
         </div>
       </div>
-      {onAddComment && (
+      {onAddComment && !isOwner && (
         <form className="comment-form" onSubmit={handleSubmit}>
           <input
             value={commentDraft}
@@ -490,23 +694,19 @@ function TeamTaskDetail({ task, user, onAddComment }) {
         </form>
       )}
       {error && <div className="alert error slim">{error}</div>}
-      <div className="comment-list">
-        {(task.comments || []).map(comment => (
-          <article className="comment-item" key={comment.id}>
-            <div>
-              <strong>{comment.authorName || '작성자'}</strong>
-              <span>{formatCommentTime(comment.createdAt)}</span>
-            </div>
-            <p>{comment.text}</p>
-          </article>
-        ))}
-        {(task.comments || []).length === 0 && <EmptyText text="이 업무에 공유된 코멘트가 없습니다." />}
-      </div>
+      <CommentThread
+        comments={visibleComments}
+        user={user}
+        canManage={canManage}
+        onReply={onReplyComment}
+        onDelete={onDeleteComment}
+        emptyText={isOwner ? '아직 타인이 남긴 피드백이 없습니다.' : '이 업무에 공유된 코멘트가 없습니다.'}
+      />
     </section>
   )
 }
 
-function ActionItemDetail({ item, user, onAddComment }) {
+function ActionItemDetail({ item, user, onAddComment, onReplyComment, onDeleteComment, canManage = false }) {
   const [commentDraft, setCommentDraft] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -535,31 +735,99 @@ function ActionItemDetail({ item, user, onAddComment }) {
           <span>{normalizeAssignee(item.assignee)} · {item.detail || '상세 내용 없음'}</span>
         </div>
       </div>
-      <form className="comment-form" onSubmit={handleSubmit}>
-        <input
-          value={commentDraft}
-          onChange={event => setCommentDraft(event.target.value)}
-          placeholder={`${user?.displayName || '작성자'}님 코멘트 입력`}
-        />
-        <button className="secondary-action" type="submit" disabled={saving}>
-          <Plus size={15} />
-          {saving ? '저장 중' : '등록'}
-        </button>
-      </form>
+      {onAddComment && (
+        <form className="comment-form" onSubmit={handleSubmit}>
+          <input
+            value={commentDraft}
+            onChange={event => setCommentDraft(event.target.value)}
+            placeholder={`${user?.displayName || '작성자'}님 코멘트 입력`}
+          />
+          <button className="secondary-action" type="submit" disabled={saving}>
+            <Plus size={15} />
+            {saving ? '저장 중' : '등록'}
+          </button>
+        </form>
+      )}
       {error && <div className="alert error slim">{error}</div>}
-      <div className="comment-list">
-        {(item.comments || []).map(comment => (
-          <article className="comment-item" key={comment.id}>
+      <CommentThread
+        comments={item.comments || []}
+        user={user}
+        canManage={canManage}
+        onReply={onReplyComment}
+        onDelete={onDeleteComment}
+        emptyText="이 프로젝트에 남긴 코멘트가 없습니다."
+      />
+    </section>
+  )
+}
+
+function CommentThread({ comments, user, canManage = false, onReply, onDelete, emptyText }) {
+  const [activeCommentId, setActiveCommentId] = useState(null)
+  const [replyDraft, setReplyDraft] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function handleReply(event, commentId) {
+    event.preventDefault()
+    if (!replyDraft.trim() || !onReply) return
+    setSaving(true)
+    try {
+      await onReply(commentId, replyDraft)
+      setReplyDraft('')
+      setActiveCommentId(null)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (comments.length === 0) {
+    return <EmptyText text={emptyText} />
+  }
+
+  return (
+    <div className="comment-list">
+      {comments.map(comment => (
+        <article className="comment-item threaded-comment" key={comment.id}>
+          <button className="comment-body-button" type="button" onClick={() => setActiveCommentId(activeCommentId === comment.id ? null : comment.id)}>
             <div>
               <strong>{comment.authorName || '작성자'}</strong>
               <span>{formatCommentTime(comment.createdAt)}</span>
             </div>
             <p>{comment.text}</p>
-          </article>
-        ))}
-        {(item.comments || []).length === 0 && <EmptyText text="이 프로젝트에 남긴 코멘트가 없습니다." />}
-      </div>
-    </section>
+          </button>
+          {onDelete && (canManage || comment.authorUid === user?.uid) && (
+            <button className="icon-button subtle" onClick={() => onDelete(comment.id)} title="코멘트 삭제">
+              <Trash2 size={14} />
+            </button>
+          )}
+          {(comment.replies || []).length > 0 && (
+            <div className="reply-list">
+              {(comment.replies || []).map(reply => (
+                <article className="reply-item" key={reply.id}>
+                  <div>
+                    <strong>{reply.authorName || '작성자'}</strong>
+                    <span>{formatCommentTime(reply.createdAt)}</span>
+                  </div>
+                  <p>{reply.text}</p>
+                </article>
+              ))}
+            </div>
+          )}
+          {activeCommentId === comment.id && onReply && (
+            <form className="comment-form reply-form" onSubmit={event => handleReply(event, comment.id)}>
+              <input
+                value={replyDraft}
+                onChange={event => setReplyDraft(event.target.value)}
+                placeholder="이 코멘트에 답글을 입력하세요"
+              />
+              <button className="secondary-action" type="submit" disabled={saving}>
+                <Plus size={15} />
+                {saving ? '저장 중' : '답글'}
+              </button>
+            </form>
+          )}
+        </article>
+      ))}
+    </div>
   )
 }
 
@@ -613,6 +881,7 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel }) {
   const [message, setMessage] = useState('')
   const [taskError, setTaskError] = useState('')
   const [openTaskId, setOpenTaskId] = useState(null)
+  const permissions = getMemberPermissions(memberProfile)
 
   useEffect(() => {
     return subscribeWeekTasks(DEFAULT_TEAM_ID, user.uid, weekKey, setTasks)
@@ -639,6 +908,10 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel }) {
     event.preventDefault()
     setTaskError('')
     setMessage('')
+    if (!permissions.canCreateTask) {
+      setTaskError('관리자가 내 업무 작성 권한을 제한했습니다.')
+      return
+    }
     if (!draft.title.trim()) {
       setTaskError('업무명을 입력한 뒤 추가를 눌러주세요.')
       return
@@ -653,7 +926,7 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel }) {
         detail: draft.detail.trim(),
         impact: draft.impact.trim(),
         ownerUid: user.uid,
-        ownerName: user.displayName || user.email,
+        ownerName: getProfileName(user, memberProfile),
         createdAt: now,
         updatedAt: now,
       },
@@ -661,8 +934,11 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel }) {
 
     setTaskSaving(true)
     try {
-      const isTeamTask = draft.visibility !== 'private'
-      await persist(nextTasks)
+      const nextTasksForSave = permissions.canShareTask
+        ? nextTasks
+        : nextTasks.map(task => task.id === nextTasks[nextTasks.length - 1].id ? { ...task, visibility: 'private' } : task)
+      const isTeamTask = draft.visibility !== 'private' && permissions.canShareTask
+      await persist(nextTasksForSave)
       setDraft({ title: '', detail: '', priority: 'normal', status: 'todo', dueDate: '', impact: '', visibility: 'team', isFocus: false })
       setMessage(isTeamTask ? '이번 주 업무에 추가되고 팀 보드에 공유되었습니다.' : '개인 보관 업무로 저장되었습니다.')
       await refreshHistory()
@@ -705,6 +981,10 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel }) {
   async function addTaskComment(taskId, text) {
     const trimmed = text.trim()
     if (!trimmed) return
+    if (!permissions.canComment) {
+      setTaskError('관리자가 코멘트 작성 권한을 제한했습니다.')
+      return
+    }
     const now = new Date().toISOString()
     const next = tasks.map(task => {
       if (task.id !== taskId) return task
@@ -716,7 +996,7 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel }) {
             id: generateId('comment'),
             text: trimmed,
             authorUid: user.uid,
-            authorName: user.displayName || user.email,
+            authorName: getProfileName(user, memberProfile),
             createdAt: now,
           },
         ],
@@ -731,10 +1011,81 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel }) {
     }
   }
 
-  async function addTaskProgress(taskId, text) {
+  async function addTaskCommentReply(taskId, commentId, text) {
     const trimmed = text.trim()
     if (!trimmed) return
+    if (!permissions.canReply) {
+      setTaskError('관리자가 답글 작성 권한을 제한했습니다.')
+      return
+    }
     const now = new Date().toISOString()
+    const next = tasks.map(task => {
+      if (task.id !== taskId) return task
+      return {
+        ...task,
+        comments: (task.comments || []).map(comment => {
+          if (comment.id !== commentId) return comment
+          return {
+            ...comment,
+            replies: [
+              ...(comment.replies || []),
+              {
+                id: generateId('reply'),
+                text: trimmed,
+                authorUid: user.uid,
+                authorName: getProfileName(user, memberProfile),
+                createdAt: now,
+              },
+            ],
+          }
+        }),
+        updatedAt: now,
+      }
+    })
+
+    try {
+      await persist(next)
+    } catch (error) {
+      setTaskError(error.message || '답글 저장에 실패했습니다.')
+    }
+  }
+
+  async function addTaskProgress(taskId, text, imageFiles = []) {
+    const trimmed = text.trim()
+    const files = Array.from(imageFiles || [])
+    if (!permissions.canWriteProgress) {
+      setTaskError('관리자가 오늘 진행내용 작성 권한을 제한했습니다.')
+      return
+    }
+    if (files.length > 0 && !permissions.canUploadImage) {
+      setTaskError('관리자가 이미지 첨부 권한을 제한했습니다.')
+      return
+    }
+    if (!trimmed && files.length === 0) return
+    if (files.length > MAX_PROGRESS_IMAGES) {
+      setTaskError(`이미지는 한 번에 최대 ${MAX_PROGRESS_IMAGES}장까지 첨부할 수 있습니다.`)
+      return
+    }
+    const now = new Date().toISOString()
+    const progressId = generateId('progress')
+    let images = []
+
+    try {
+      const compressedFiles = await withTimeout(
+        Promise.all(files.map(compressProgressImage)),
+        15000,
+        '이미지 압축이 오래 걸리고 있습니다. 더 작은 이미지로 다시 시도해주세요.'
+      )
+      images = await withTimeout(
+        uploadProgressImages(DEFAULT_TEAM_ID, user.uid, weekKey, taskId, progressId, compressedFiles),
+        30000,
+        '이미지 업로드가 30초 이상 지연되었습니다. Firebase Storage 프로젝트/규칙을 확인해주세요.'
+      )
+    } catch (error) {
+      setTaskError(error.message || '이미지 업로드에 실패했습니다.')
+      return
+    }
+
     const next = tasks.map(task => {
       if (task.id !== taskId) return task
       return {
@@ -742,11 +1093,12 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel }) {
         progressLogs: [
           ...(task.progressLogs || []),
           {
-            id: generateId('progress'),
+            id: progressId,
             text: trimmed,
+            images,
             dateKey: getTodayKey(),
             authorUid: user.uid,
-            authorName: user.displayName || user.email,
+            authorName: getProfileName(user, memberProfile),
             createdAt: now,
           },
         ],
@@ -780,6 +1132,12 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel }) {
 
   async function removeTask(taskId) {
     try {
+      const targetTask = tasks.find(task => task.id === taskId)
+      const imagePaths = (targetTask?.progressLogs || [])
+        .flatMap(log => (log.images || []).map(image => image.path))
+      if (imagePaths.length > 0) {
+        await deleteStorageFiles(imagePaths)
+      }
       await persist(tasks.filter(task => task.id !== taskId))
     } catch (error) {
       setTaskError(error.message || '업무 삭제에 실패했습니다.')
@@ -790,6 +1148,10 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel }) {
     setSaving(true)
     setMessage('')
     try {
+      if (!permissions.canShareTask) {
+        setMessage('관리자가 팀 공유 권한을 제한했습니다.')
+        return
+      }
       await shareWeekToTeam(DEFAULT_TEAM_ID, user.uid, weekKey, user, memberProfile, tasks)
       setMessage('팀 보드에 공유되었습니다.')
     } catch (error) {
@@ -814,53 +1176,57 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel }) {
         </section>
 
         <Panel title="이번 주 업무" icon={ListChecks} action={
-          <button className="secondary-action" onClick={handleShare} disabled={saving}>
+          <button className="secondary-action" onClick={handleShare} disabled={saving || !permissions.canShareTask}>
             <Send size={15} />
             {saving ? '공유 중' : '팀에 공유'}
           </button>
         }>
-          <form className="task-form" onSubmit={handleAddTask}>
-            <input
-              value={draft.title}
-              onChange={event => setDraft({ ...draft, title: event.target.value })}
-              placeholder="업무명"
-            />
-            <input
-              value={draft.impact}
-              onChange={event => setDraft({ ...draft, impact: event.target.value })}
-              placeholder="연결 KPI 또는 기대효과"
-            />
-            <textarea
-              value={draft.detail}
-              onChange={event => setDraft({ ...draft, detail: event.target.value })}
-              placeholder="진행 내용, 산출물, 막힌 지점"
-            />
-            <div className="form-row">
-              <select value={draft.priority} onChange={event => setDraft({ ...draft, priority: event.target.value })}>
-                {Object.entries(PRIORITY_META).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}
-              </select>
-              <select value={draft.status} onChange={event => setDraft({ ...draft, status: event.target.value })}>
-                {Object.entries(STATUS_META).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}
-              </select>
-              <input type="date" value={draft.dueDate} onChange={event => setDraft({ ...draft, dueDate: event.target.value })} />
-              <select value={draft.visibility} onChange={event => setDraft({ ...draft, visibility: event.target.value })}>
-                <option value="team">팀 공유</option>
-                <option value="private">개인 보관</option>
-              </select>
-              <label className="check-toggle">
-                <input
-                  type="checkbox"
-                  checked={draft.isFocus}
-                  onChange={event => setDraft({ ...draft, isFocus: event.target.checked })}
-                />
-                우선순위 업무
-              </label>
-              <button className="primary-action" type="submit" disabled={taskSaving}>
-                <Plus size={16} />
-                {taskSaving ? '저장 중' : '추가'}
-              </button>
-            </div>
-          </form>
+          {permissions.canCreateTask ? (
+            <form className="task-form" onSubmit={handleAddTask}>
+              <input
+                value={draft.title}
+                onChange={event => setDraft({ ...draft, title: event.target.value })}
+                placeholder="업무명"
+              />
+              <input
+                value={draft.impact}
+                onChange={event => setDraft({ ...draft, impact: event.target.value })}
+                placeholder="연결 KPI 또는 기대효과"
+              />
+              <textarea
+                value={draft.detail}
+                onChange={event => setDraft({ ...draft, detail: event.target.value })}
+                placeholder="진행 내용, 산출물, 막힌 지점"
+              />
+              <div className="form-row">
+                <select value={draft.priority} onChange={event => setDraft({ ...draft, priority: event.target.value })}>
+                  {Object.entries(PRIORITY_META).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}
+                </select>
+                <select value={draft.status} onChange={event => setDraft({ ...draft, status: event.target.value })}>
+                  {Object.entries(STATUS_META).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}
+                </select>
+                <input type="date" value={draft.dueDate} onChange={event => setDraft({ ...draft, dueDate: event.target.value })} />
+                <select value={draft.visibility} onChange={event => setDraft({ ...draft, visibility: event.target.value })} disabled={!permissions.canShareTask}>
+                  <option value="team">팀 공유</option>
+                  <option value="private">개인 보관</option>
+                </select>
+                <label className="check-toggle">
+                  <input
+                    type="checkbox"
+                    checked={draft.isFocus}
+                    onChange={event => setDraft({ ...draft, isFocus: event.target.checked })}
+                  />
+                  우선순위 업무
+                </label>
+                <button className="primary-action" type="submit" disabled={taskSaving}>
+                  <Plus size={16} />
+                  {taskSaving ? '저장 중' : '추가'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <EmptyText text="관리자가 내 업무 작성 권한을 제한했습니다." />
+          )}
 
           {taskError && <div className="alert error slim">{taskError}</div>}
           {message && <div className="alert slim">{message}</div>}
@@ -876,8 +1242,11 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel }) {
                 expanded={openTaskId === task.id}
                 onToggleExpand={() => setOpenTaskId(openTaskId === task.id ? null : task.id)}
                 onAddComment={text => addTaskComment(task.id, text)}
-                onAddProgress={text => addTaskProgress(task.id, text)}
+                onAddProgress={(text, files) => addTaskProgress(task.id, text, files)}
+                onReplyComment={(commentId, text) => addTaskCommentReply(task.id, commentId, text)}
                 onDeleteComment={commentId => deleteTaskComment(task.id, commentId)}
+                user={user}
+                permissions={permissions}
               />
             ))}
             {activeTasks.length === 0 && <EmptyText text="진행 중인 이번 주 업무가 없습니다." />}
@@ -1000,19 +1369,101 @@ function TodayHighlights({ logs }) {
             {log.impact && <Badge tone="green">{log.impact}</Badge>}
             <span>{formatCommentTime(log.createdAt)}</span>
           </div>
-          <p>{log.text}</p>
+          {log.text && <p>{log.text}</p>}
+          {log.images?.length > 0 && <ImageStrip images={log.images} />}
         </article>
       ))}
     </div>
   )
 }
 
-function TeamBoard({ user, weekKey, teamFeed, actionItems, kpis, canManage }) {
+function ImageStrip({ images }) {
+  return (
+    <div className="image-strip">
+      {images.map(image => (
+        <a href={image.url} target="_blank" rel="noreferrer" key={image.path || image.url}>
+          <img src={image.url} alt={image.name || '첨부 이미지'} loading="lazy" />
+        </a>
+      ))}
+    </div>
+  )
+}
+
+function ProjectForm({ kpis, onCreate }) {
+  const [draft, setDraft] = useState({
+    title: '',
+    detail: '',
+    category: 'week',
+    status: 'todo',
+    priority: 'normal',
+    subteam: 'commerce',
+    dueDate: '',
+    kpi: kpis[0]?.label || '',
+  })
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+    if (!draft.title.trim()) {
+      setError('프로젝트명을 입력해주세요.')
+      return
+    }
+    setSaving(true)
+    setError('')
+    try {
+      await onCreate({
+        id: generateId('action'),
+        sortOrder: Date.now(),
+        ...draft,
+        title: draft.title.trim(),
+        detail: draft.detail.trim(),
+        assignee: getSubteamLabel(draft.subteam),
+      })
+    } catch (err) {
+      setError(err.message || '프로젝트 추가에 실패했습니다.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <form className="project-form" onSubmit={handleSubmit}>
+      <input value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })} placeholder="진행 프로젝트명" />
+      <input value={draft.detail} onChange={event => setDraft({ ...draft, detail: event.target.value })} placeholder="프로젝트 설명 / 산출물" />
+      <div className="form-row project-form-row">
+        <select value={draft.category} onChange={event => setDraft({ ...draft, category: event.target.value })}>
+          {Object.entries(CATEGORY_META).filter(([key]) => key !== 'team').map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}
+        </select>
+        <select value={draft.subteam} onChange={event => setDraft({ ...draft, subteam: event.target.value })}>
+          {SUBTEAMS.map(team => <option key={team.id} value={team.id}>{team.label}</option>)}
+        </select>
+        <select value={draft.priority} onChange={event => setDraft({ ...draft, priority: event.target.value })}>
+          {Object.entries(PRIORITY_META).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}
+        </select>
+        <input type="date" value={draft.dueDate} onChange={event => setDraft({ ...draft, dueDate: event.target.value })} />
+        <select value={draft.kpi} onChange={event => setDraft({ ...draft, kpi: event.target.value })}>
+          <option value="">KPI 미연결</option>
+          {kpis.map(kpi => <option key={kpi.id} value={kpi.label}>{kpi.label}</option>)}
+        </select>
+        <button className="primary-action" type="submit" disabled={saving}>
+          <Plus size={15} />
+          {saving ? '저장 중' : '추가'}
+        </button>
+      </div>
+      {error && <div className="alert error slim">{error}</div>}
+    </form>
+  )
+}
+
+function TeamBoard({ user, weekKey, teamFeed, actionItems, kpis, canManage, memberProfile }) {
   const [category, setCategory] = useState('all')
   const [status, setStatus] = useState('all')
   const [subteamFilter, setSubteamFilter] = useState('all')
   const [inboxMode, setInboxMode] = useState('comments')
   const [selectedActionId, setSelectedActionId] = useState(null)
+  const [showProjectForm, setShowProjectForm] = useState(false)
+  const permissions = getMemberPermissions(memberProfile)
   const filteredActionItems = actionItems.filter(item => {
     const categoryMatch = category === 'all' || item.category === category
     const statusMatch = status === 'all' || (item.status || (item.done ? 'done' : 'todo')) === status
@@ -1048,9 +1499,9 @@ function TeamBoard({ user, weekKey, teamFeed, actionItems, kpis, canManage }) {
   const activeSharedTasks = sharedTasks
     .filter(task => task.status !== 'done')
     .sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority) || dueSortValue(a.dueDate) - dueSortValue(b.dueDate))
-  const priorityTasks = activeSharedTasks
-    .filter(task => task.isFocus || task.status === 'blocked' || isDueSoon(task) || task.priority === 'high')
-    .sort((a, b) => taskFocusRank(a) - taskFocusRank(b))
+  const priorityTasks = actionPlanItems
+    .filter(task => task.status !== 'done' && (task.isFocus || task.status === 'blocked' || isDueSoon(task) || task.priority === 'high'))
+    .sort((a, b) => projectPriorityRank(a) - projectPriorityRank(b))
   const recentComments = [
     ...sharedTasks.flatMap(task => (task.comments || []).map(comment => ({ ...comment, task, sourceType: 'shared' }))),
     ...filteredActionItems.flatMap(item => (item.comments || []).map(comment => ({
@@ -1072,12 +1523,13 @@ function TeamBoard({ user, weekKey, teamFeed, actionItems, kpis, canManage }) {
   }, [selectedActionId, actionPlanItems])
 
   async function handleAddSharedComment(task, text) {
+    if (!permissions.canComment && !canManage) return
     const now = new Date().toISOString()
     await addSharedTaskComment(DEFAULT_TEAM_ID, weekKey, task.memberUid, task.id, {
       id: generateId('comment'),
       text: text.trim(),
       authorUid: user.uid,
-      authorName: user.displayName || user.email,
+      authorName: getProfileName(user, memberProfile),
       createdAt: now,
     })
   }
@@ -1092,9 +1544,35 @@ function TeamBoard({ user, weekKey, teamFeed, actionItems, kpis, canManage }) {
       id: generateId('comment'),
       text: text.trim(),
       authorUid: user.uid,
-      authorName: user.displayName || user.email,
+      authorName: getProfileName(user, memberProfile),
       createdAt: now,
     })
+  }
+
+  async function handleReplyActionComment(item, commentId, text) {
+    if (!permissions.canReply && !canManage) return
+    const reply = {
+      id: generateId('reply'),
+      text: text.trim(),
+      authorUid: user.uid,
+      authorName: getProfileName(user, memberProfile),
+      createdAt: new Date().toISOString(),
+    }
+
+    if (item.sourceType === 'shared') {
+      await addSharedTaskCommentReply(DEFAULT_TEAM_ID, weekKey, item.memberUid, item.id, commentId, reply)
+      return
+    }
+
+    await addActionItemCommentReply(DEFAULT_TEAM_ID, item.id, commentId, reply)
+  }
+
+  async function handleDeleteActionComment(item, commentId) {
+    if (item.sourceType === 'shared') {
+      await deleteSharedTaskComment(DEFAULT_TEAM_ID, weekKey, item.memberUid, item.id, commentId)
+      return
+    }
+    await deleteActionItemComment(DEFAULT_TEAM_ID, item.id, commentId)
   }
 
   async function handleActionStatusChange(item, nextStatus) {
@@ -1103,6 +1581,14 @@ function TeamBoard({ user, weekKey, teamFeed, actionItems, kpis, canManage }) {
       return
     }
     await updateActionItemStatus(DEFAULT_TEAM_ID, item.id, nextStatus)
+  }
+
+  async function handleActionKpiChange(item, kpi) {
+    if (item.sourceType === 'shared') {
+      await updateSharedTaskFields(DEFAULT_TEAM_ID, weekKey, item.memberUid, item.id, { impact: kpi })
+      return
+    }
+    await updateActionItemFields(DEFAULT_TEAM_ID, item.id, { kpi })
   }
 
   function focusActionItem(itemId) {
@@ -1125,7 +1611,21 @@ function TeamBoard({ user, weekKey, teamFeed, actionItems, kpis, canManage }) {
       <SubteamFilter value={subteamFilter} onChange={setSubteamFilter} />
 
       <section className="content-grid two">
-        <Panel title="진행 프로젝트" icon={Flag}>
+        <Panel title="진행 프로젝트" icon={Flag} action={canManage && (
+          <button className="secondary-action" onClick={() => setShowProjectForm(!showProjectForm)}>
+            <Plus size={15} />
+            프로젝트 추가
+          </button>
+        )}>
+          {showProjectForm && (
+            <ProjectForm
+              kpis={kpis}
+              onCreate={async item => {
+                await createActionItem(DEFAULT_TEAM_ID, item)
+                setShowProjectForm(false)
+              }}
+            />
+          )}
           <div className="filter-row">
             {['all', ...Object.keys(CATEGORY_META)].map(key => (
               <button key={key} className={category === key ? 'active' : ''} onClick={() => setCategory(key)}>
@@ -1147,13 +1647,18 @@ function TeamBoard({ user, weekKey, teamFeed, actionItems, kpis, canManage }) {
                   item={item}
                   active={selectedAction?.actionKey === item.actionKey}
                   onClick={() => setSelectedActionId(selectedAction?.actionKey === item.actionKey ? null : item.actionKey)}
-                  onStatusChange={(item.sourceType === 'shared' || canManage) ? next => handleActionStatusChange(item, next) : null}
+                  onStatusChange={(item.sourceType === 'shared' || canManage || permissions.canUpdateTeamProject) ? next => handleActionStatusChange(item, next) : null}
+                  kpis={kpis}
+                  onKpiChange={canManage ? next => handleActionKpiChange(item, next) : null}
                 />
                 {selectedAction?.actionKey === item.actionKey && (
                   <ActionItemDetail
                     item={selectedAction}
                     user={user}
-                    onAddComment={text => handleAddActionComment(selectedAction, text)}
+                    canManage={canManage}
+                    onAddComment={(permissions.canComment || canManage) ? text => handleAddActionComment(selectedAction, text) : null}
+                    onReplyComment={(permissions.canReply || canManage) ? (commentId, text) => handleReplyActionComment(selectedAction, commentId, text) : null}
+                    onDeleteComment={commentId => handleDeleteActionComment(selectedAction, commentId)}
                   />
                 )}
               </div>
@@ -1192,10 +1697,10 @@ function TeamBoard({ user, weekKey, teamFeed, actionItems, kpis, canManage }) {
 
             {inboxMode === 'priority' && priorityTasks.map(task => (
               <FocusTaskRow
-                key={taskKey(task)}
+                key={task.actionKey || taskKey(task)}
                 task={task}
-                active={selectedActionId === `shared-${task.memberUid}-${task.id}`}
-                onClick={() => focusSharedProject(task)}
+                active={selectedActionId === (task.actionKey || `shared-${task.memberUid}-${task.id}`)}
+                onClick={() => task.actionKey ? focusActionItem(task.actionKey) : focusSharedProject(task)}
               />
             ))}
             {inboxMode === 'priority' && priorityTasks.length === 0 && <EmptyText text="해당 팀의 공유 진행 업무가 없습니다." />}
@@ -1234,8 +1739,14 @@ function TeamBoard({ user, weekKey, teamFeed, actionItems, kpis, canManage }) {
 
 function ReportBoard({ weekLabel, teamFeed, actionItems, kpis }) {
   const [report, setReport] = useState(null)
+  const [dailyReport, setDailyReport] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [dailyLoading, setDailyLoading] = useState(false)
   const [error, setError] = useState('')
+  const todayKey = getTodayKey()
+  const todayLogs = collectDailyProgressLogs(teamFeed, todayKey)
+
+  useEffect(() => subscribeDailyReport(DEFAULT_TEAM_ID, todayKey, setDailyReport), [todayKey])
 
   async function handleGenerate() {
     setLoading(true)
@@ -1247,6 +1758,33 @@ function ReportBoard({ weekLabel, teamFeed, actionItems, kpis }) {
       setError(err.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleDailyRegenerate() {
+    setDailyLoading(true)
+    setError('')
+    try {
+      const result = await requestGemini('dailyReport', {
+        dateKey: todayKey,
+        dateLabel: formatKoreanDate(todayKey),
+        weekLabel,
+        progressLogs: todayLogs,
+        actionItems,
+        kpis,
+      })
+      await saveDailyReport(DEFAULT_TEAM_ID, todayKey, {
+        ...result,
+        weekLabel,
+        dateLabel: formatKoreanDate(todayKey),
+        progressCount: todayLogs.length,
+        source: 'manual',
+        generatedAt: new Date().toISOString(),
+      })
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setDailyLoading(false)
     }
   }
 
@@ -1265,9 +1803,43 @@ function ReportBoard({ weekLabel, teamFeed, actionItems, kpis }) {
     '[보고문]',
     report.executiveBrief,
   ].join('\n') : ''
+  const dailyReportText = dailyReport ? [
+    `[PM 피드백] ${dailyReport.feedbackReport?.headline || ''}`,
+    ...(dailyReport.feedbackReport?.coreProgress || []).map(item => `- ${item}`),
+    '',
+    '[리스크]',
+    ...(dailyReport.feedbackReport?.risks || []).map(item => `- ${item}`),
+    '',
+    '[디벨롭 제안]',
+    ...(dailyReport.feedbackReport?.developmentAdvice || []).map(item => `- ${item}`),
+    dailyReport.feedbackReport?.pmComment || '',
+    '',
+    `[일일 업무보고] ${dailyReport.dailySummary?.title || ''}`,
+    ...(dailyReport.dailySummary?.summaryBullets || []).map(item => `- ${item}`),
+    dailyReport.dailySummary?.executiveText || '',
+  ].join('\n') : ''
 
   return (
     <main className="content-grid report-layout">
+      <Panel title="오늘 자동 업무보고" icon={Clock} action={
+        <button className="secondary-action" onClick={() => dailyReportText && navigator.clipboard?.writeText(dailyReportText)} disabled={!dailyReport}>
+          <Check size={15} />
+          복사
+        </button>
+      }>
+        <div className="report-source">
+          <MetricCard icon={Clock} label="오늘 진행내용" value={`${todayLogs.length}건`} helper={formatKoreanDate(todayKey)} tone="blue" />
+          <MetricCard icon={Bot} label="자동 생성" value="17:50" helper="한국시간 기준" tone="teal" />
+          <MetricCard icon={RefreshCcw} label="수동 재생성" value="17:40~18:10" helper="최신 기록 반영" tone="green" />
+        </div>
+        <button className="primary-action wide" onClick={handleDailyRegenerate} disabled={dailyLoading}>
+          <RefreshCcw size={16} />
+          {dailyLoading ? '오늘 보고서 생성 중' : '오늘 보고서 다시 생성'}
+        </button>
+        <DailyReportView report={dailyReport} />
+        {!dailyReport && <EmptyText text="아직 오늘 생성된 일일 보고서가 없습니다. 17:50 자동 생성 또는 수동 재생성을 사용하세요." />}
+      </Panel>
+
       <Panel title="AI 보고 초안 생성" icon={Bot}>
         <div className="report-source">
           <MetricCard icon={Users} label="팀 공유" value={`${teamFeed.length}명`} helper="이번 주 기준" tone="blue" />
@@ -1303,9 +1875,45 @@ function ReportBoard({ weekLabel, teamFeed, actionItems, kpis }) {
   )
 }
 
-function TaskEditor({ task, onChange, onComplete, onDelete, expanded, onToggleExpand, onAddComment, onAddProgress, onDeleteComment }) {
-  const [commentDraft, setCommentDraft] = useState('')
+function DailyReportView({ report }) {
+  if (!report) return null
+  const feedback = report.feedbackReport || {}
+  const summary = report.dailySummary || {}
+
+  return (
+    <div className="daily-report-grid">
+      <article className="report-output daily-report-card">
+        <div className="note-head">
+          <Badge tone="teal">PM 피드백</Badge>
+          <span>{report.dateLabel || report.dateKey} · {report.source === 'cron' ? '자동 생성' : '수동 생성'}</span>
+        </div>
+        <h2>{feedback.headline}</h2>
+        <ReportList title="핵심 진행" items={feedback.coreProgress} />
+        <ReportList title="리스크" items={feedback.risks} />
+        <ReportList title="디벨롭 방향" items={feedback.developmentAdvice} />
+        <div className="executive-brief">{feedback.pmComment}</div>
+      </article>
+
+      <article className="report-output daily-report-card">
+        <div className="note-head">
+          <Badge tone="blue">일일 업무보고</Badge>
+          <span>보고용 요약</span>
+        </div>
+        <h2>{summary.title}</h2>
+        <ReportList title="요약" items={summary.summaryBullets} />
+        <div className="executive-brief">{summary.completedOrProgress}</div>
+        <div className="executive-brief">{summary.issuesAndNeeds}</div>
+        <div className="executive-brief">{summary.tomorrowPlan}</div>
+        <div className="executive-brief">{summary.executiveText}</div>
+      </article>
+    </div>
+  )
+}
+
+function TaskEditor({ task, user, permissions, onChange, onComplete, onDelete, expanded, onToggleExpand, onAddComment, onAddProgress, onReplyComment, onDeleteComment }) {
   const [progressDraft, setProgressDraft] = useState('')
+  const [progressImages, setProgressImages] = useState([])
+  const [progressSaving, setProgressSaving] = useState(false)
   const [draftStatus, setDraftStatus] = useState(task.status)
   const [draftPriority, setDraftPriority] = useState(task.priority)
   const [draftIsFocus, setDraftIsFocus] = useState(Boolean(task.isFocus))
@@ -1318,18 +1926,24 @@ function TaskEditor({ task, onChange, onComplete, onDelete, expanded, onToggleEx
     setDraftIsFocus(Boolean(task.isFocus))
   }, [task.status, task.priority, task.isFocus])
 
-  async function handleAddComment(event) {
-    event.preventDefault()
-    if (!commentDraft.trim()) return
-    await onAddComment(commentDraft)
-    setCommentDraft('')
-  }
-
   async function handleAddProgress(event) {
     event.preventDefault()
-    if (!progressDraft.trim()) return
-    await onAddProgress(progressDraft)
-    setProgressDraft('')
+    if (!progressDraft.trim() && progressImages.length === 0) return
+    const form = event.currentTarget
+    setProgressSaving(true)
+    try {
+      await onAddProgress(progressDraft, progressImages)
+      setProgressDraft('')
+      setProgressImages([])
+      form.reset()
+    } finally {
+      setProgressSaving(false)
+    }
+  }
+
+  function handleImageChange(event) {
+    const files = Array.from(event.target.files || []).filter(file => file.type.startsWith('image/'))
+    setProgressImages(files.slice(0, MAX_PROGRESS_IMAGES))
   }
 
   async function handleConfirmStatus() {
@@ -1391,17 +2005,36 @@ function TaskEditor({ task, onChange, onComplete, onDelete, expanded, onToggleEx
             <Clock size={16} />
             <strong>{task.title} 오늘 진행내용</strong>
           </div>
-          <form className="comment-form" onSubmit={handleAddProgress}>
-            <input
-              value={progressDraft}
-              onChange={event => setProgressDraft(event.target.value)}
-              placeholder="오늘 이 업무에서 진행한 내용, 산출물, 결정사항을 입력하세요"
-            />
-            <button className="secondary-action" type="submit">
-              <Plus size={15} />
-              등록
-            </button>
-          </form>
+          {permissions.canWriteProgress ? (
+            <>
+              <form className="comment-form progress-form" onSubmit={handleAddProgress}>
+                <input
+                  value={progressDraft}
+                  onChange={event => setProgressDraft(event.target.value)}
+                  placeholder="오늘 이 업무에서 진행한 내용, 산출물, 결정사항을 입력하세요"
+                />
+                {permissions.canUploadImage && (
+                  <label className="file-action">
+                    이미지
+                    <input type="file" accept="image/*" multiple onChange={handleImageChange} />
+                  </label>
+                )}
+                <button className="secondary-action" type="submit" disabled={progressSaving}>
+                  <Plus size={15} />
+                  {progressSaving ? '저장 중' : '등록'}
+                </button>
+              </form>
+              {progressImages.length > 0 && (
+                <div className="image-preview-strip">
+                  {progressImages.map(file => (
+                    <span key={`${file.name}-${file.size}`}>{file.name}</span>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <EmptyText text="관리자가 오늘 진행내용 작성 권한을 제한했습니다." />
+          )}
           <div className="comment-list progress-list">
             {todayLogs.map(log => (
               <article className="comment-item progress-item" key={log.id}>
@@ -1409,7 +2042,8 @@ function TaskEditor({ task, onChange, onComplete, onDelete, expanded, onToggleEx
                   <strong>{log.authorName || '작성자'}</strong>
                   <span>{formatCommentTime(log.createdAt)}</span>
                 </div>
-                <p>{log.text}</p>
+                {log.text && <p>{log.text}</p>}
+                {log.images?.length > 0 && <ImageStrip images={log.images} />}
               </article>
             ))}
             {todayLogs.length === 0 && <EmptyText text="오늘 입력한 진행내용이 없습니다." />}
@@ -1417,41 +2051,22 @@ function TaskEditor({ task, onChange, onComplete, onDelete, expanded, onToggleEx
 
           <div className="comment-title">
             <MessageSquareText size={16} />
-            <strong>{task.title} 코멘트</strong>
+            <strong>{task.title} 피드백</strong>
           </div>
-          <form className="comment-form" onSubmit={handleAddComment}>
-            <input
-              value={commentDraft}
-              onChange={event => setCommentDraft(event.target.value)}
-              placeholder="이 업무에 대한 코멘트를 입력하세요"
-            />
-            <button className="secondary-action" type="submit">
-              <Plus size={15} />
-              등록
-            </button>
-          </form>
-          <div className="comment-list">
-            {(task.comments || []).map(comment => (
-              <article className="comment-item" key={comment.id}>
-                <div>
-                  <strong>{comment.authorName || '작성자'}</strong>
-                  <span>{formatCommentTime(comment.createdAt)}</span>
-                </div>
-                <p>{comment.text}</p>
-                <button className="icon-button subtle" onClick={() => onDeleteComment(comment.id)} title="코멘트 삭제">
-                  <Trash2 size={14} />
-                </button>
-              </article>
-            ))}
-            {(task.comments || []).length === 0 && <EmptyText text="아직 코멘트가 없습니다." />}
-          </div>
+          <CommentThread
+            comments={(task.comments || []).filter(comment => comment.authorUid !== user?.uid)}
+            user={user}
+            onReply={onReplyComment}
+            onDelete={onDeleteComment}
+            emptyText="아직 타인이 남긴 피드백이 없습니다."
+          />
         </div>
       )}
     </article>
   )
 }
 
-function ActionRow({ item, onStatusChange, compact = false, active = false, onClick }) {
+function ActionRow({ item, onStatusChange, onKpiChange, kpis = [], compact = false, active = false, onClick }) {
   const currentStatus = item.status || (item.done ? 'done' : 'todo')
   const [draftStatus, setDraftStatus] = useState(currentStatus)
   const assigneeLabel = item.subteam ? getSubteamLabel(item.subteam) : normalizeAssignee(item.assignee)
@@ -1479,19 +2094,30 @@ function ActionRow({ item, onStatusChange, compact = false, active = false, onCl
           <Badge tone={STATUS_META[currentStatus]?.tone}>{STATUS_META[currentStatus]?.label}</Badge>
           <Badge tone={PRIORITY_META[item.priority]?.tone}>{PRIORITY_META[item.priority]?.label}</Badge>
           <Badge tone="gray">{assigneeLabel}</Badge>
+          {(item.kpi || item.impact) && <Badge tone="teal">{item.kpi || item.impact}</Badge>}
           <Badge tone={daysUntil(item.dueDate) < 0 && currentStatus !== 'done' ? 'red' : 'gray'}>{formatDue(item.dueDate)}</Badge>
           <Badge tone={(item.comments || []).length > 0 ? 'blue' : 'gray'}>코멘트 {(item.comments || []).length}</Badge>
         </div>
       </div>
-      {onStatusChange && (
+      {(onStatusChange || onKpiChange) && (
         <div className="status-confirm" onClick={event => event.stopPropagation()}>
-          <select value={draftStatus} onChange={event => setDraftStatus(event.target.value)}>
-            {Object.entries(STATUS_META).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}
-          </select>
-          <button className="secondary-action" onClick={handleConfirm} disabled={draftStatus === currentStatus}>
-            <Check size={15} />
-            확인
-          </button>
+          {onKpiChange && (
+            <select value={item.kpi || item.impact || ''} onChange={event => onKpiChange(event.target.value)} aria-label="연결 KPI">
+              <option value="">KPI 미연결</option>
+              {kpis.map(kpi => <option key={kpi.id} value={kpi.label}>{kpi.label}</option>)}
+            </select>
+          )}
+          {onStatusChange && (
+            <>
+              <select value={draftStatus} onChange={event => setDraftStatus(event.target.value)}>
+                {Object.entries(STATUS_META).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}
+              </select>
+              <button className="secondary-action" onClick={handleConfirm} disabled={draftStatus === currentStatus}>
+                <Check size={15} />
+                확인
+              </button>
+            </>
+          )}
         </div>
       )}
     </article>
@@ -1507,7 +2133,7 @@ function MemberCard({ member, isMe }) {
         {member.photoURL ? <img src={member.photoURL} alt="" /> : <div className="avatar">{member.displayName?.[0] || 'N'}</div>}
         <div>
           <strong>{member.displayName}</strong>
-          <span>{member.subteamLabel || getSubteamLabel(member.subteam)} · {done}/{items.length} 완료</span>
+          <span>{member.subteamLabel || getSubteamLabel(member.subteam)} · {member.title || '팀원'} · {done}/{items.length} 완료</span>
         </div>
       </div>
       <div className="progress-track"><span style={{ width: `${percent(done, items.length)}%` }} /></div>
@@ -1524,8 +2150,45 @@ function MemberCard({ member, isMe }) {
 }
 
 function KpiSection({ kpis, editable = false }) {
+  const [draft, setDraft] = useState({ label: '', target: 100, unit: '%', current: 0 })
+  const [error, setError] = useState('')
+
+  async function handleCreate(event) {
+    event.preventDefault()
+    if (!editable || !draft.label.trim()) return
+    setError('')
+    try {
+      await createKpi(DEFAULT_TEAM_ID, {
+        id: generateId('kpi'),
+        sortOrder: Date.now(),
+        label: draft.label.trim(),
+        current: Number(draft.current) || 0,
+        target: Number(draft.target) || 100,
+        unit: draft.unit.trim() || '%',
+        owner: '관리자',
+        color: 'teal',
+      })
+      setDraft({ label: '', target: 100, unit: '%', current: 0 })
+    } catch (err) {
+      setError(err.message || 'KPI 추가에 실패했습니다.')
+    }
+  }
+
   return (
     <Panel title="KPI 바" icon={BarChart3}>
+      {editable && (
+        <form className="kpi-create-form" onSubmit={handleCreate}>
+          <input value={draft.label} onChange={event => setDraft({ ...draft, label: event.target.value })} placeholder="KPI명" />
+          <input value={draft.current} onChange={event => setDraft({ ...draft, current: event.target.value })} placeholder="현재값" />
+          <input value={draft.target} onChange={event => setDraft({ ...draft, target: event.target.value })} placeholder="목표값" />
+          <input value={draft.unit} onChange={event => setDraft({ ...draft, unit: event.target.value })} placeholder="단위" />
+          <button className="secondary-action" type="submit">
+            <Plus size={15} />
+            KPI 추가
+          </button>
+        </form>
+      )}
+      {editable && error && <div className="alert error slim">{error}</div>}
       <div className="kpi-grid">
         {kpis.map(kpi => <KpiCard key={kpi.id} kpi={kpi} editable={editable} />)}
         {kpis.length === 0 && <EmptyText text="등록된 KPI가 없습니다." />}
@@ -1560,6 +2223,12 @@ function KpiCard({ kpi, editable }) {
     }
   }
 
+  async function handleDelete() {
+    const ok = window.confirm(`"${kpi.label}" KPI를 삭제할까요?`)
+    if (!ok) return
+    await deleteKpi(DEFAULT_TEAM_ID, kpi.id)
+  }
+
   return (
     <article className={`kpi-card ${kpi.color || 'teal'}`}>
       <span>{kpi.label}</span>
@@ -1581,6 +2250,9 @@ function KpiCard({ kpi, editable }) {
             />
             <button className="secondary-action mini" onClick={commitValue} disabled={saving || String(value) === String(kpi.current)}>
               {saving ? '저장 중' : '저장'}
+            </button>
+            <button className="icon-button subtle" onClick={handleDelete} title="KPI 삭제">
+              <Trash2 size={14} />
             </button>
           </div>
         )}
@@ -1733,9 +2405,80 @@ function taskFocusRank(task) {
   return taskRiskRank(task)
 }
 
+function projectPriorityRank(task) {
+  const remain = daysUntil(task.dueDate)
+  if (remain !== null) return remain
+  if (task.status === 'blocked') return 30
+  if (task.isFocus) return 40
+  if (task.priority === 'high') return 50
+  return 999
+}
+
 function taskKey(task) {
   if (!task) return ''
   return `${task.memberUid || task.ownerUid || 'member'}-${task.id}`
+}
+
+function getMemberPermissions(profile) {
+  return {
+    ...DEFAULT_POST_PERMISSIONS,
+    ...(profile?.permissions || {}),
+  }
+}
+
+function getProfileName(user, profile) {
+  return profile?.displayName || user?.displayName || user?.email || '이름 없음'
+}
+
+function compressProgressImage(file) {
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp']
+  if (!allowedTypes.includes(file.type)) {
+    throw new Error('이미지는 JPG, PNG, WEBP 형식만 첨부할 수 있습니다.')
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    throw new Error('이미지는 원본 기준 10MB 이하만 첨부할 수 있습니다.')
+  }
+
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    const url = URL.createObjectURL(file)
+
+    image.onload = () => {
+      const maxSide = 1600
+      const scale = Math.min(1, maxSide / Math.max(image.width, image.height))
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.max(1, Math.round(image.width * scale))
+      canvas.height = Math.max(1, Math.round(image.height * scale))
+      const context = canvas.getContext('2d')
+      context.drawImage(image, 0, 0, canvas.width, canvas.height)
+
+      canvas.toBlob(blob => {
+        URL.revokeObjectURL(url)
+        if (!blob) {
+          reject(new Error('이미지 압축에 실패했습니다.'))
+          return
+        }
+        const baseName = file.name.replace(/\.[^.]+$/, '')
+        resolve(new File([blob], `${baseName || 'progress-image'}.jpg`, { type: 'image/jpeg' }))
+      }, 'image/jpeg', 0.76)
+    }
+
+    image.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('이미지를 읽을 수 없습니다. 다른 파일을 선택해주세요.'))
+    }
+
+    image.src = url
+  })
+}
+
+function withTimeout(promise, ms, message) {
+  let timeoutId
+  const timeout = new Promise((_, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error(message)), ms)
+  })
+
+  return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timeoutId))
 }
 
 function getTodayKey(date = new Date()) {
@@ -1757,6 +2500,32 @@ function getTodayProgressLogs(tasks) {
         impact: task.impact,
       })))
     .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+}
+
+function collectDailyProgressLogs(teamFeed, dateKey) {
+  return teamFeed
+    .flatMap(member => (member.items || []).flatMap(task => (task.progressLogs || [])
+      .filter(log => log.dateKey === dateKey)
+      .map(log => ({
+        ...log,
+        memberUid: member.uid,
+        memberName: member.displayName,
+        subteam: member.subteam,
+        subteamLabel: member.subteamLabel || getSubteamLabel(member.subteam),
+        taskId: task.id,
+        taskTitle: task.title,
+        status: task.status,
+        priority: task.priority,
+        impact: task.impact,
+        dueDate: task.dueDate,
+      }))))
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+}
+
+function formatKoreanDate(dateKey) {
+  const date = new Date(`${dateKey}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return dateKey
+  return `${date.getFullYear()}년 ${date.getMonth() + 1}/${date.getDate()}`
 }
 
 function normalizeAssignee(value) {

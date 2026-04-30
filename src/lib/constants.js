@@ -16,6 +16,40 @@ export const SUBTEAMS = [
   { id: 'strategy_partner', label: '전략파트너' },
 ]
 
+export const MEMBER_ROLES = [
+  { id: 'member', label: '팀원' },
+  { id: 'lead', label: '파트리더' },
+  { id: 'manager', label: '관리자' },
+]
+
+export const JOB_TITLES = [
+  '팀원',
+  '파트리더',
+  '팀장',
+  '본부장',
+  '관리자',
+]
+
+export const DEFAULT_POST_PERMISSIONS = {
+  canCreateTask: true,
+  canShareTask: true,
+  canWriteProgress: true,
+  canUploadImage: true,
+  canComment: true,
+  canReply: true,
+  canUpdateTeamProject: false,
+}
+
+export const POST_PERMISSION_META = [
+  { key: 'canCreateTask', label: '내 업무 작성' },
+  { key: 'canShareTask', label: '팀 공유' },
+  { key: 'canWriteProgress', label: '오늘 진행내용' },
+  { key: 'canUploadImage', label: '이미지 첨부' },
+  { key: 'canComment', label: '코멘트 작성' },
+  { key: 'canReply', label: '답글 작성' },
+  { key: 'canUpdateTeamProject', label: '팀 프로젝트 상태 변경' },
+]
+
 export function getSubteamLabel(subteamId) {
   return SUBTEAMS.find(team => team.id === subteamId)?.label || '팀 미선택'
 }

@@ -1,4 +1,10 @@
 import {
+  deleteObject,
+  getDownloadURL,
+  ref as storageRef,
+  uploadBytes,
+} from 'firebase/storage'
+import {
   collection,
   deleteDoc,
   doc,
@@ -12,7 +18,7 @@ import {
   updateDoc,
   writeBatch,
 } from 'firebase/firestore'
-import { db, isFirebaseConfigured } from './firebase'
+import { db, isFirebaseConfigured, storage } from './firebase'
 import { INITIAL_ACTION_ITEMS, INITIAL_KPIS, getSubteamLabel } from './constants'
 
 function assertDb() {
@@ -21,15 +27,65 @@ function assertDb() {
   }
 }
 
+function assertStorage() {
+  if (!isFirebaseConfigured || !storage) {
+    throw new Error('Firebase Storage 환경변수가 아직 설정되지 않았습니다.')
+  }
+}
+
+function safeFileName(name) {
+  return String(name || 'progress-image.jpg')
+    .replace(/[^a-zA-Z0-9._-]/g, '-')
+    .slice(0, 80)
+}
+
+export async function uploadProgressImages(teamId, uid, weekKey, taskId, progressId, files) {
+  assertStorage()
+  const uploads = Array.from(files || []).map(async (file, index) => {
+    const name = safeFileName(file.name)
+    const path = `teams/${teamId}/members/${uid}/weeks/${weekKey}/tasks/${taskId}/progress/${progressId}/${Date.now()}-${index}-${name}`
+    const fileRef = storageRef(storage, path)
+    await uploadBytes(fileRef, file, {
+      contentType: file.type || 'image/jpeg',
+      customMetadata: {
+        teamId,
+        uid,
+        weekKey,
+        taskId,
+        progressId,
+      },
+    })
+    const url = await getDownloadURL(fileRef)
+    return {
+      url,
+      path,
+      name,
+      size: file.size,
+      contentType: file.type || 'image/jpeg',
+    }
+  })
+
+  return Promise.all(uploads)
+}
+
+export async function deleteStorageFiles(paths = []) {
+  assertStorage()
+  await Promise.all(paths.filter(Boolean).map(path => deleteObject(storageRef(storage, path))))
+}
+
 export async function ensureTeamAndMember(teamId, user) {
   assertDb()
   const memberRef = doc(db, 'teams', teamId, 'members', user.uid)
+  const existingSnap = await getDoc(memberRef)
+  const existing = existingSnap.exists() ? existingSnap.data() : {}
   await setDoc(memberRef, {
     uid: user.uid,
-    displayName: user.displayName || user.email || '이름 없음',
+    displayName: existing.displayName || user.displayName || user.email || '이름 없음',
     email: user.email || '',
     photoURL: user.photoURL || '',
-    role: 'member',
+    role: existing.role || 'member',
+    title: existing.title || '팀원',
+    permissions: existing.permissions || {},
     updatedAt: serverTimestamp(),
   }, { merge: true })
 
@@ -88,14 +144,35 @@ export function subscribeMemberProfile(teamId, uid, callback) {
   })
 }
 
+export function subscribeMembers(teamId, callback) {
+  assertDb()
+  const membersRef = collection(db, 'teams', teamId, 'members')
+  return onSnapshot(query(membersRef, orderBy('displayName', 'asc')), snap => {
+    callback(snap.docs.map(item => ({ id: item.id, ...item.data() })))
+  })
+}
+
+export async function updateMemberProfile(teamId, uid, patch) {
+  assertDb()
+  const nextPatch = { ...patch }
+  if (Object.prototype.hasOwnProperty.call(patch, 'subteam')) {
+    nextPatch.subteamLabel = getSubteamLabel(patch.subteam)
+    nextPatch.subteamLocked = true
+  }
+  await setDoc(doc(db, 'teams', teamId, 'members', uid), {
+    ...nextPatch,
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
+}
+
 export async function updateMemberSubteam(teamId, uid, subteam) {
   assertDb()
-  await updateDoc(doc(db, 'teams', teamId, 'members', uid), {
+  await setDoc(doc(db, 'teams', teamId, 'members', uid), {
     subteam,
     subteamLabel: getSubteamLabel(subteam),
     subteamLocked: true,
     updatedAt: serverTimestamp(),
-  })
+  }, { merge: true })
 }
 
 export async function saveWeekTasks(teamId, uid, weekKey, items) {
@@ -134,7 +211,7 @@ export async function shareWeekToTeam(teamId, uid, weekKey, user, memberProfile,
 
   await setDoc(ref, {
     uid,
-    displayName: user.displayName || user.email || '이름 없음',
+    displayName: memberProfile?.displayName || user.displayName || user.email || '이름 없음',
     email: user.email || '',
     photoURL: user.photoURL || '',
     subteam: memberProfile?.subteam || '',
@@ -148,13 +225,13 @@ export async function shareWeekToTeam(teamId, uid, weekKey, user, memberProfile,
 export async function addSharedTaskComment(teamId, weekKey, memberUid, taskId, comment) {
   assertDb()
   const ref = doc(db, 'teams', teamId, 'weeks', weekKey, 'shared', memberUid)
+  const memberWeekRef = doc(db, 'teams', teamId, 'members', memberUid, 'weeks', weekKey)
   const snap = await getDoc(ref)
   if (!snap.exists()) {
     throw new Error('팀 공유 업무를 찾을 수 없습니다.')
   }
 
-  const data = snap.data()
-  const nextItems = (data.items || []).map(item => {
+  const applyComment = items => (items || []).map(item => {
     if (item.id !== taskId) return item
     return {
       ...item,
@@ -162,11 +239,92 @@ export async function addSharedTaskComment(teamId, weekKey, memberUid, taskId, c
       updatedAt: new Date().toISOString(),
     }
   })
+  const nextItems = applyComment(snap.data().items)
 
   await setDoc(ref, {
     items: nextItems,
     updatedAt: serverTimestamp(),
   }, { merge: true })
+
+  const memberWeekSnap = await getDoc(memberWeekRef)
+  if (memberWeekSnap.exists()) {
+    await setDoc(memberWeekRef, {
+      items: applyComment(memberWeekSnap.data().items),
+      updatedAt: serverTimestamp(),
+    }, { merge: true })
+  }
+}
+
+export async function addSharedTaskCommentReply(teamId, weekKey, memberUid, taskId, commentId, reply) {
+  assertDb()
+  const ref = doc(db, 'teams', teamId, 'weeks', weekKey, 'shared', memberUid)
+  const memberWeekRef = doc(db, 'teams', teamId, 'members', memberUid, 'weeks', weekKey)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) {
+    throw new Error('팀 공유 업무를 찾을 수 없습니다.')
+  }
+
+  const applyReply = items => (items || []).map(item => {
+    if (item.id !== taskId) return item
+    return {
+      ...item,
+      comments: (item.comments || []).map(comment => {
+        if (comment.id !== commentId) return comment
+        return {
+          ...comment,
+          replies: [...(comment.replies || []), reply],
+        }
+      }),
+      updatedAt: new Date().toISOString(),
+    }
+  })
+  const nextItems = applyReply(snap.data().items)
+
+  await setDoc(ref, {
+    items: nextItems,
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
+
+  const memberWeekSnap = await getDoc(memberWeekRef)
+  if (memberWeekSnap.exists()) {
+    await setDoc(memberWeekRef, {
+      items: applyReply(memberWeekSnap.data().items),
+      updatedAt: serverTimestamp(),
+    }, { merge: true })
+  }
+}
+
+export async function deleteSharedTaskComment(teamId, weekKey, memberUid, taskId, commentId) {
+  assertDb()
+  const ref = doc(db, 'teams', teamId, 'weeks', weekKey, 'shared', memberUid)
+  const memberWeekRef = doc(db, 'teams', teamId, 'members', memberUid, 'weeks', weekKey)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) {
+    throw new Error('팀 공유 업무를 찾을 수 없습니다.')
+  }
+
+  const applyDelete = items => (items || []).map(item => {
+    if (item.id !== taskId) return item
+    return {
+      ...item,
+      comments: (item.comments || []).filter(comment => comment.id !== commentId),
+      updatedAt: new Date().toISOString(),
+    }
+  })
+  const nextItems = applyDelete(snap.data().items)
+
+  await setDoc(ref, {
+    items: nextItems,
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
+
+  const memberWeekSnap = await getDoc(memberWeekRef)
+  if (memberWeekSnap.exists()) {
+    await setDoc(memberWeekRef, {
+      items: applyDelete(memberWeekSnap.data().items),
+      updatedAt: serverTimestamp(),
+    }, { merge: true })
+  }
 }
 
 export async function updateSharedTaskFields(teamId, weekKey, memberUid, taskId, patch) {
@@ -236,6 +394,28 @@ export async function updateActionItemStatus(teamId, itemId, status) {
   })
 }
 
+export async function createActionItem(teamId, item) {
+  assertDb()
+  await setDoc(doc(db, 'teams', teamId, 'actionItems', item.id), {
+    ...item,
+    done: item.status === 'done',
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function updateActionItemFields(teamId, itemId, patch) {
+  assertDb()
+  const nextPatch = { ...patch }
+  if (Object.prototype.hasOwnProperty.call(patch, 'status')) {
+    nextPatch.done = patch.status === 'done'
+  }
+  await setDoc(doc(db, 'teams', teamId, 'actionItems', itemId), {
+    ...nextPatch,
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
+}
+
 export async function addActionItemComment(teamId, itemId, comment) {
   assertDb()
   const ref = doc(db, 'teams', teamId, 'actionItems', itemId)
@@ -246,6 +426,40 @@ export async function addActionItemComment(teamId, itemId, comment) {
 
   await setDoc(ref, {
     comments: [...(snap.data().comments || []), comment],
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
+}
+
+export async function addActionItemCommentReply(teamId, itemId, commentId, reply) {
+  assertDb()
+  const ref = doc(db, 'teams', teamId, 'actionItems', itemId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) {
+    throw new Error('진행 프로젝트를 찾을 수 없습니다.')
+  }
+
+  await setDoc(ref, {
+    comments: (snap.data().comments || []).map(comment => {
+      if (comment.id !== commentId) return comment
+      return {
+        ...comment,
+        replies: [...(comment.replies || []), reply],
+      }
+    }),
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
+}
+
+export async function deleteActionItemComment(teamId, itemId, commentId) {
+  assertDb()
+  const ref = doc(db, 'teams', teamId, 'actionItems', itemId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) {
+    throw new Error('진행 프로젝트를 찾을 수 없습니다.')
+  }
+
+  await setDoc(ref, {
+    comments: (snap.data().comments || []).filter(comment => comment.id !== commentId),
     updatedAt: serverTimestamp(),
   }, { merge: true })
 }
@@ -264,6 +478,36 @@ export async function updateKpiValue(teamId, kpiId, current) {
     current: Number(current),
     updatedAt: serverTimestamp(),
   })
+}
+
+export async function createKpi(teamId, kpi) {
+  assertDb()
+  await setDoc(doc(db, 'teams', teamId, 'kpis', kpi.id), {
+    ...kpi,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function deleteKpi(teamId, kpiId) {
+  assertDb()
+  await deleteDoc(doc(db, 'teams', teamId, 'kpis', kpiId))
+}
+
+export function subscribeDailyReport(teamId, dateKey, callback) {
+  assertDb()
+  return onSnapshot(doc(db, 'teams', teamId, 'reports', `daily-${dateKey}`), snap => {
+    callback(snap.exists() ? { id: snap.id, ...snap.data() } : null)
+  })
+}
+
+export async function saveDailyReport(teamId, dateKey, report) {
+  assertDb()
+  await setDoc(doc(db, 'teams', teamId, 'reports', `daily-${dateKey}`), {
+    ...report,
+    dateKey,
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
 }
 
 export function subscribeIdeaNotes(teamId, uid, callback) {
