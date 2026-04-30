@@ -1,4 +1,5 @@
-const MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash'
+const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash']
 
 export function json(res, status, body) {
   res.status(status).setHeader('Content-Type', 'application/json')
@@ -118,30 +119,39 @@ export async function generateGeminiJson(mode, payload, options = {}) {
   }
 
   const prompt = buildPrompt(mode, payload)
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: options.temperature ?? 0.35,
-          maxOutputTokens: options.maxOutputTokens ?? 1200,
-          responseMimeType: 'application/json',
-        },
-      }),
-    }
-  )
+  const models = [MODEL, ...FALLBACK_MODELS].filter((model, index, arr) => model && arr.indexOf(model) === index)
+  let lastError = null
 
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({}))
-    throw new Error(errorBody.error?.message || `Gemini API 오류 ${response.status}`)
+  for (const model of models) {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: options.temperature ?? 0.35,
+            maxOutputTokens: options.maxOutputTokens ?? 1200,
+            responseMimeType: 'application/json',
+          },
+        }),
+      }
+    )
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({}))
+      lastError = new Error(errorBody.error?.message || `Gemini API 오류 ${response.status}`)
+      if (response.status === 404) continue
+      throw lastError
+    }
+
+    const data = await response.json()
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}'
+    return JSON.parse(stripCodeFence(text))
   }
 
-  const data = await response.json()
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}'
-  return JSON.parse(stripCodeFence(text))
+  throw lastError || new Error('사용 가능한 Gemini Flash 모델을 찾지 못했습니다.')
 }
 
 export default async function handler(req, res) {
