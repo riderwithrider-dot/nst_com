@@ -1359,7 +1359,7 @@ function AINote({ user, weekKey, weekLabel, completedTasks }) {
       <div className="ai-box">
         <div>
           <strong>완료 {completedTasks.length}건 분석</strong>
-          <span>Gemini 1.5 Flash</span>
+          <span>Gemini 2.5 Flash</span>
         </div>
         <button className="primary-action" onClick={handleAnalyze} disabled={loading || completedTasks.length === 0}>
           <Lightbulb size={16} />
@@ -1888,7 +1888,7 @@ function ReportBoard({ weekLabel, teamFeed, actionItems, kpis }) {
         </div>
         <button className="primary-action wide" onClick={handleGenerate} disabled={loading}>
           <Bot size={16} />
-          {loading ? '생성 중' : 'Gemini 1.5 Flash로 보고 초안 생성'}
+          {loading ? '생성 중' : 'Gemini 2.5 Flash로 보고 초안 생성'}
         </button>
         {error && <div className="alert error slim">{error}</div>}
       </Panel>
