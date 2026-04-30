@@ -877,6 +877,7 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel }) {
     isFocus: false,
   })
   const [saving, setSaving] = useState(false)
+  const [dailyReportSaving, setDailyReportSaving] = useState(false)
   const [taskSaving, setTaskSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [taskError, setTaskError] = useState('')
@@ -1166,6 +1167,40 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel }) {
   const currentRate = percent(completedTasks.length, tasks.length)
   const todayHighlights = getTodayProgressLogs(tasks)
 
+  async function handlePersonalDailyReport() {
+    setDailyReportSaving(true)
+    setTaskError('')
+    setMessage('')
+    try {
+      const result = await requestGemini('dailyReport', {
+        dateKey: getTodayKey(),
+        dateLabel: formatKoreanDate(getTodayKey()),
+        weekLabel,
+        progressLogs: todayHighlights.map(log => ({
+          ...log,
+          memberName: getProfileName(user, memberProfile),
+          subteam: memberProfile?.subteam,
+          subteamLabel: memberProfile?.subteamLabel || getSubteamLabel(memberProfile?.subteam),
+        })),
+        actionItems: [],
+        kpis: [],
+      })
+      await saveDailyReport(DEFAULT_TEAM_ID, getTodayKey(), {
+        ...result,
+        weekLabel,
+        dateLabel: formatKoreanDate(getTodayKey()),
+        progressCount: todayHighlights.length,
+        source: 'manual-personal',
+        generatedAt: new Date().toISOString(),
+      })
+      setMessage('오늘의 주요업무 기반 보고서가 생성되었습니다. 보고 초안 메뉴에서 확인할 수 있습니다.')
+    } catch (error) {
+      setTaskError(error.message || '오늘 보고서 생성에 실패했습니다.')
+    } finally {
+      setDailyReportSaving(false)
+    }
+  }
+
   return (
     <main className="content-grid personal-layout">
       <section className="view-stack">
@@ -1253,7 +1288,12 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel }) {
           </div>
         </Panel>
 
-        <Panel title="오늘의 주요업무" icon={Clock}>
+        <Panel title="오늘의 주요업무" icon={Clock} action={
+          <button className="secondary-action" onClick={handlePersonalDailyReport} disabled={dailyReportSaving || todayHighlights.length === 0}>
+            <Bot size={15} />
+            {dailyReportSaving ? '생성 중' : '보고서 생성'}
+          </button>
+        }>
           <TodayHighlights logs={todayHighlights} />
         </Panel>
 
