@@ -6,4 +6,9 @@ dist
 .env.*.local
 .vercel
 
-.vercel
+# Claude Code worktrees (local-only)
+.claude/
+
+# Nested copies of this project
+files-mentioned-by-the-user-20260422/
+files-mentioned-by-the-user-20260422 - 복사본/
