@@ -243,6 +243,11 @@ textarea:focus {
   align-items: start;
 }
 
+.request-layout {
+  grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.95fr);
+  align-items: start;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -369,6 +374,7 @@ textarea:focus {
   background: var(--surface-soft);
   color: var(--text);
   border: 1px solid var(--line);
+  text-decoration: none;
 }
 
 .secondary-action.mini {
@@ -1192,12 +1198,193 @@ textarea:focus {
 
 .daily-report-grid {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin-top: 14px;
 }
 
 .daily-report-card {
   border-left: 4px solid var(--teal);
+}
+
+.daily-report-grid .daily-report-card:nth-child(2),
+.daily-report-grid .ai-ledger-card {
+  grid-column: 1 / -1;
+}
+
+.daily-report-grid .daily-report-card:nth-child(2) {
+  order: 4;
+}
+
+.ai-ledger-card {
+  order: 3;
+  border-left-color: var(--blue);
+}
+
+.email-draft-card {
+  order: 2;
+  border-left-color: var(--green);
+}
+
+.email-draft-body {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  white-space: pre-wrap;
+  line-height: 1.75;
+}
+
+.email-draft-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ai-ledger-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ai-ledger-item {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.ai-ledger-item p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.ledger-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ledger-grid span {
+  padding: 8px;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.request-form {
+  display: grid;
+  gap: 10px;
+}
+
+.request-form textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+
+.request-actions,
+.request-card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.prompt-preview {
+  min-height: 260px;
+  max-height: 520px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: keep-all;
+  border: 1px dashed var(--line-strong);
+  border-radius: 12px;
+  background: var(--soft);
+  padding: 14px;
+  color: var(--ink);
+  font-family: inherit;
+  line-height: 1.7;
+}
+
+.prompt-preview.compact {
+  min-height: 0;
+  max-height: 180px;
+  font-size: 13px;
+}
+
+.request-list {
+  display: grid;
+  gap: 12px;
+}
+
+.request-card {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.request-card h3,
+.request-card p {
+  margin: 0;
+}
+
+.muted-text {
+  color: var(--muted);
+}
+
+.daily-history-list {
+  display: grid;
+  gap: 10px;
+}
+
+.daily-history-item {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.history-toggle {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--surface-soft);
+  border: 0;
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 800;
+  text-align: left;
+}
+
+.history-toggle small {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.daily-history-body {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.daily-history-body h3,
+.history-ledger-summary p {
+  margin: 0;
+}
+
+.history-ledger-summary {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--teal-soft);
 }
 
 .channel-item {
@@ -1533,7 +1720,8 @@ textarea:focus {
 
   .content-grid.two,
   .personal-layout,
-  .report-layout {
+  .report-layout,
+  .request-layout {
     grid-template-columns: 1fr;
   }
 
@@ -1545,7 +1733,9 @@ textarea:focus {
   }
 
   .admin-member-fields,
-  .permission-grid {
+  .permission-grid,
+  .daily-report-grid,
+  .ledger-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -1569,7 +1759,9 @@ textarea:focus {
   .member-grid,
   .subteam-choice-grid,
   .admin-member-fields,
-  .permission-grid {
+  .permission-grid,
+  .daily-report-grid,
+  .ledger-grid {
     grid-template-columns: 1fr;
   }
 

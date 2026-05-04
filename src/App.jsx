@@ -28,6 +28,7 @@ import {
   addIdeaNote,
   addActionItemComment,
   addActionItemCommentReply,
+  addChangeRequest,
   addSharedTaskComment,
   addSharedTaskCommentReply,
   createActionItem,
@@ -44,9 +45,11 @@ import {
   seedInitialData,
   shareWeekToTeam,
   subscribeActionItems,
+  subscribeChangeRequests,
   subscribeIdeaNotes,
   subscribeKpis,
   subscribeDailyReport,
+  subscribeDailyReports,
   subscribeMemberProfile,
   subscribeMembers,
   subscribeTeamFeed,
@@ -57,6 +60,7 @@ import {
   updateKpiValue,
   updateMemberProfile,
   updateMemberSubteam,
+  uploadChangeRequestImages,
   uploadProgressImages,
 } from './lib/db'
 import {
@@ -81,10 +85,12 @@ const VIEWS = [
   { id: 'personal', label: '내 업무', icon: ListChecks },
   { id: 'team', label: '팀 보드', icon: Users },
   { id: 'report', label: '보고 초안', icon: ClipboardList, managerOnly: true },
+  { id: 'requests', label: '수정요청사항', icon: MessageSquareText },
   { id: 'admin', label: '구성원 관리', icon: Settings, managerOnly: true },
 ]
 
 const MAX_PROGRESS_IMAGES = 3
+const MAX_REQUEST_IMAGES = 5
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -376,6 +382,9 @@ function Dashboard({ user, bootError }) {
             kpis={kpis}
           />
         )}
+        {activeView === 'requests' && (
+          <ChangeRequestBoard user={user} memberProfile={memberProfile} />
+        )}
         {canManage && activeView === 'admin' && (
           <AdminBoard currentUser={user} />
         )}
@@ -418,6 +427,171 @@ function AdminBoard({ currentUser }) {
             />
           ))}
           {members.length === 0 && <EmptyText text="아직 로그인한 구성원이 없습니다." />}
+        </div>
+      </Panel>
+    </main>
+  )
+}
+
+function ChangeRequestBoard({ user, memberProfile }) {
+  const [requests, setRequests] = useState([])
+  const [title, setTitle] = useState('')
+  const [location, setLocation] = useState('')
+  const [detail, setDetail] = useState('')
+  const [expected, setExpected] = useState('')
+  const [images, setImages] = useState([])
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const authorName = getProfileName(user, memberProfile)
+
+  useEffect(() => subscribeChangeRequests(DEFAULT_TEAM_ID, setRequests), [])
+
+  const prompt = buildChangeRequestPrompt({
+    title,
+    location,
+    detail,
+    expected,
+    authorName,
+    imageCount: images.length,
+  })
+
+  function addImageFiles(files) {
+    const imageFiles = Array.from(files || []).filter(file => file.type.startsWith('image/'))
+    setImages(prev => [...prev, ...imageFiles].slice(0, MAX_REQUEST_IMAGES))
+  }
+
+  function handlePaste(event) {
+    const files = Array.from(event.clipboardData?.files || [])
+    if (files.some(file => file.type.startsWith('image/'))) {
+      event.preventDefault()
+      addImageFiles(files)
+    }
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+    const form = event.currentTarget
+    if (!title.trim() || !detail.trim()) {
+      setError('제목과 수정요청 내용을 입력해주세요.')
+      return
+    }
+
+    setSaving(true)
+    setError('')
+    setMessage('')
+    try {
+      const requestId = generateId()
+      const compressedImages = await Promise.all(images.map(compressProgressImage))
+      const uploadedImages = compressedImages.length > 0
+        ? await withTimeout(
+            uploadChangeRequestImages(DEFAULT_TEAM_ID, user.uid, requestId, compressedImages),
+            30000,
+            '캡처 이미지 업로드가 30초 이상 지연되었습니다. Firebase Storage를 확인해주세요.'
+          )
+        : []
+      const finalPrompt = buildChangeRequestPrompt({
+        title,
+        location,
+        detail,
+        expected,
+        authorName,
+        imageCount: uploadedImages.length,
+        imageNames: uploadedImages.map(image => image.name),
+      })
+
+      await addChangeRequest(DEFAULT_TEAM_ID, {
+        id: requestId,
+        title: title.trim(),
+        location: location.trim(),
+        detail: detail.trim(),
+        expected: expected.trim(),
+        prompt: finalPrompt,
+        images: uploadedImages,
+        authorUid: user.uid,
+        authorName,
+        authorEmail: user.email || '',
+        subteam: memberProfile?.subteam || '',
+        subteamLabel: memberProfile?.subteamLabel || getSubteamLabel(memberProfile?.subteam),
+        status: 'requested',
+        createdAt: new Date().toISOString(),
+      })
+
+      setTitle('')
+      setLocation('')
+      setDetail('')
+      setExpected('')
+      setImages([])
+      setMessage('수정요청이 저장되었습니다. 생성된 프롬프트를 복사해 바로 전달할 수 있습니다.')
+      form?.reset()
+    } catch (err) {
+      setError(err.message || '수정요청 저장에 실패했습니다.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <main className="content-grid request-layout">
+      <Panel title="수정요청 작성" icon={MessageSquareText}>
+        <p className="section-help">화면 캡처를 붙여넣거나 이미지로 첨부하고, 원하는 수정 방향을 적으면 Codex에게 바로 전달할 프롬프트가 자동 생성됩니다.</p>
+        {error && <div className="alert error slim">{error}</div>}
+        {message && <div className="alert slim">{message}</div>}
+        <form className="request-form" onSubmit={handleSubmit} onPaste={handlePaste}>
+          <input value={title} onChange={event => setTitle(event.target.value)} placeholder="요청 제목 예: 보고 초안 메일 형식 개선" />
+          <input value={location} onChange={event => setLocation(event.target.value)} placeholder="화면 위치 예: 보고 초안 > 오늘 자동 업무보고" />
+          <textarea value={detail} onChange={event => setDetail(event.target.value)} placeholder="수정해야 하는 내용을 적거나, 여기에 캡처 이미지를 Ctrl+V로 붙여넣으세요." rows={5} />
+          <textarea value={expected} onChange={event => setExpected(event.target.value)} placeholder="원하는 결과 예: 오른쪽에 본부장님 메일 초안이 나오고 복사 버튼이 있었으면 좋겠음" rows={3} />
+          <div className="request-actions">
+            <label className="file-action">
+              캡처 이미지
+              <input type="file" accept="image/*" multiple onChange={event => addImageFiles(event.target.files)} />
+            </label>
+            <button className="primary-action" type="submit" disabled={saving}>
+              <Plus size={16} />
+              {saving ? '저장 중' : '수정요청 저장'}
+            </button>
+          </div>
+          {images.length > 0 && (
+            <div className="image-preview-strip">
+              {images.map(file => <span key={`${file.name}-${file.size}`}>{file.name}</span>)}
+            </div>
+          )}
+        </form>
+      </Panel>
+
+      <Panel title="자동 생성 프롬프트" icon={ClipboardList} action={
+        <button className="secondary-action" onClick={() => navigator.clipboard?.writeText(prompt)} disabled={!title.trim() && !detail.trim()}>
+          <Check size={15} />
+          복사
+        </button>
+      }>
+        <pre className="prompt-preview">{prompt}</pre>
+      </Panel>
+
+      <Panel title="저장된 수정요청" icon={ListChecks}>
+        <div className="request-list">
+          {requests.map(request => (
+            <article className="request-card" key={request.id}>
+              <div className="note-head">
+                <Badge tone="teal">{request.status === 'requested' ? '요청됨' : request.status}</Badge>
+                <span>{request.authorName || '작성자'} · {formatCommentTime(request.createdAt)}</span>
+              </div>
+              <h3>{request.title}</h3>
+              {request.location && <p className="muted-text">{request.location}</p>}
+              <p>{request.detail}</p>
+              {request.expected && <div className="executive-brief">{request.expected}</div>}
+              {request.images?.length > 0 && <ImageStrip images={request.images} />}
+              <div className="request-card-actions">
+                <button className="secondary-action" onClick={() => navigator.clipboard?.writeText(request.prompt || '')}>
+                  <Check size={15} />
+                  프롬프트 복사
+                </button>
+              </div>
+              <pre className="prompt-preview compact">{request.prompt}</pre>
+            </article>
+          ))}
+          {requests.length === 0 && <EmptyText text="아직 저장된 수정요청이 없습니다." />}
         </div>
       </Panel>
     </main>
@@ -1780,6 +1954,8 @@ function TeamBoard({ user, weekKey, teamFeed, actionItems, kpis, canManage, memb
 function ReportBoard({ weekLabel, teamFeed, actionItems, kpis }) {
   const [report, setReport] = useState(null)
   const [dailyReport, setDailyReport] = useState(null)
+  const [dailyReports, setDailyReports] = useState([])
+  const [openReportId, setOpenReportId] = useState('')
   const [loading, setLoading] = useState(false)
   const [dailyLoading, setDailyLoading] = useState(false)
   const [error, setError] = useState('')
@@ -1787,6 +1963,7 @@ function ReportBoard({ weekLabel, teamFeed, actionItems, kpis }) {
   const todayLogs = collectDailyProgressLogs(teamFeed, todayKey)
 
   useEffect(() => subscribeDailyReport(DEFAULT_TEAM_ID, todayKey, setDailyReport), [todayKey])
+  useEffect(() => subscribeDailyReports(DEFAULT_TEAM_ID, setDailyReports), [])
 
   async function handleGenerate() {
     setLoading(true)
@@ -1857,6 +2034,17 @@ function ReportBoard({ weekLabel, teamFeed, actionItems, kpis }) {
     `[일일 업무보고] ${dailyReport.dailySummary?.title || ''}`,
     ...(dailyReport.dailySummary?.summaryBullets || []).map(item => `- ${item}`),
     dailyReport.dailySummary?.executiveText || '',
+    '',
+    '[본부장 이메일 초안]',
+    dailyReport.emailDraft?.subject || '',
+    dailyReport.emailDraft?.body || '',
+    '',
+    '[AI 누적관리 원장]',
+    dailyReport.aiManagement?.dailyDigest || '',
+    ...(dailyReport.aiManagement?.taskLedger || []).map(item => `- ${item.taskTitle}: ${item.progressToday} / 다음: ${item.nextAction} / 품질:${item.dataQuality}`),
+    '',
+    '[누락 입력값]',
+    ...(dailyReport.aiManagement?.missingInputs || []).map(item => `- ${item}`),
   ].join('\n') : ''
 
   return (
@@ -1911,6 +2099,14 @@ function ReportBoard({ weekLabel, teamFeed, actionItems, kpis }) {
           </article>
         )}
       </Panel>
+
+      <Panel title="일별 업무보고 누적 히스토리" icon={ListChecks}>
+        <DailyReportHistory
+          reports={dailyReports}
+          openReportId={openReportId}
+          onToggle={id => setOpenReportId(current => current === id ? '' : id)}
+        />
+      </Panel>
     </main>
   )
 }
@@ -1919,6 +2115,21 @@ function DailyReportView({ report }) {
   if (!report) return null
   const feedback = report.feedbackReport || {}
   const summary = report.dailySummary || {}
+  const emailDraft = report.emailDraft || {}
+  const aiManagement = report.aiManagement || {}
+  const emailSubject = emailDraft.subject || `[NST BIO] 일일업무보고 - ${report.dateLabel || report.dateKey || ''}`
+  const emailBody = emailDraft.body || [
+    '안녕하세요. 본부장님',
+    '',
+    `${report.dateLabel || report.dateKey || '금일'} 일일업무보고 송부드립니다.`,
+    '',
+    summary.executiveText || summary.completedOrProgress || '',
+    '',
+    '끝.',
+    '',
+    '감사합니다.',
+  ].join('\n')
+  const mailtoHref = `mailto:?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`
 
   return (
     <div className="daily-report-grid">
@@ -1946,6 +2157,109 @@ function DailyReportView({ report }) {
         <div className="executive-brief">{summary.tomorrowPlan}</div>
         <div className="executive-brief">{summary.executiveText}</div>
       </article>
+
+      <article className="report-output daily-report-card ai-ledger-card">
+        <div className="note-head">
+          <Badge tone="teal">AI 누적관리 원장</Badge>
+          <span>데이터 축적용</span>
+        </div>
+        <h2>{aiManagement.dailyDigest || '오늘 업무 누적관리 데이터'}</h2>
+        <div className="ai-ledger-list">
+          {(aiManagement.taskLedger || []).map((item, index) => (
+            <article className="ai-ledger-item" key={`${item.taskTitle || 'task'}-${index}`}>
+              <div className="note-head">
+                <strong>{item.taskTitle || '업무명 미입력'}</strong>
+                <Badge tone={item.dataQuality === '충분' ? 'green' : 'amber'}>{item.dataQuality || '보완필요'}</Badge>
+              </div>
+              <div className="ledger-grid">
+                <span>담당: {item.owner || '미입력'}</span>
+                <span>상태: {item.status || '미입력'}</span>
+                <span>KPI/분류: {item.category || '미연결'}</span>
+                <span>일정: {item.dueOrTiming || '미입력'}</span>
+              </div>
+              <p><strong>오늘 진척</strong> {item.progressToday || '미입력'}</p>
+              <p><strong>결정/산출물</strong> {item.decisionOrOutput || '미입력'}</p>
+              <p><strong>리스크</strong> {item.riskOrBlocker || '없음'}</p>
+              <p><strong>다음 액션</strong> {item.nextAction || '미입력'}</p>
+            </article>
+          ))}
+          {(aiManagement.taskLedger || []).length === 0 && <EmptyText text="아직 누적관리 원장이 없습니다. 보고서를 다시 생성하면 함께 만들어집니다." />}
+        </div>
+        <ReportList title="누락 입력값" items={aiManagement.missingInputs || []} />
+        <ReportList title="내일 체크리스트" items={aiManagement.tomorrowChecklist || []} />
+      </article>
+
+      <article className="report-output daily-report-card email-draft-card">
+        <div className="note-head">
+          <Badge tone="green">본부장 메일 초안</Badge>
+          <span>바로 발송용</span>
+        </div>
+        <h2>{emailSubject}</h2>
+        <div className="email-draft-body">{emailBody}</div>
+        <div className="email-draft-actions">
+          <button className="secondary-action" onClick={() => navigator.clipboard?.writeText(`${emailSubject}\n\n${emailBody}`)}>
+            <Check size={15} />
+            메일 초안 복사
+          </button>
+          <a className="secondary-action" href={mailtoHref}>
+            <Send size={15} />
+            메일 열기
+          </a>
+        </div>
+      </article>
+    </div>
+  )
+}
+
+function DailyReportHistory({ reports, openReportId, onToggle }) {
+  if (!reports.length) {
+    return <EmptyText text="아직 누적된 일일업무보고가 없습니다. 오늘 보고서를 생성하면 날짜별로 쌓입니다." />
+  }
+
+  return (
+    <div className="daily-history-list">
+      {reports.map(report => {
+        const isOpen = openReportId === report.id
+        const summary = report.dailySummary || {}
+        const aiManagement = report.aiManagement || {}
+        const emailDraft = report.emailDraft || {}
+        const copyText = [
+          emailDraft.subject || summary.title || report.dateLabel || report.dateKey,
+          '',
+          emailDraft.body || summary.executiveText || '',
+          '',
+          '[AI 누적관리]',
+          aiManagement.dailyDigest || '',
+          ...(aiManagement.taskLedger || []).map(item => `- ${item.taskTitle}: ${item.progressToday} / 다음: ${item.nextAction}`),
+        ].join('\n')
+
+        return (
+          <article className="daily-history-item" key={report.id}>
+            <button className="history-toggle" type="button" onClick={() => onToggle(report.id)}>
+              <span>{isOpen ? '▼' : '▶'} {report.dateLabel || report.dateKey}</span>
+              <small>{report.progressCount || 0}건 · {report.source === 'cron' ? '자동' : '수동'} 생성</small>
+            </button>
+            {isOpen && (
+              <div className="daily-history-body">
+                <div className="note-head">
+                  <Badge tone="green">메일 보고</Badge>
+                  <button className="secondary-action mini" onClick={() => navigator.clipboard?.writeText(copyText)}>
+                    <Check size={14} />
+                    복사
+                  </button>
+                </div>
+                <h3>{emailDraft.subject || summary.title || '일일업무보고'}</h3>
+                <div className="email-draft-body">{emailDraft.body || summary.executiveText || '보고 내용이 없습니다.'}</div>
+                <div className="history-ledger-summary">
+                  <strong>AI 누적관리 요약</strong>
+                  <p>{aiManagement.dailyDigest || '누적관리 요약이 없습니다.'}</p>
+                  <ReportList title="내일 체크리스트" items={aiManagement.tomorrowChecklist || []} />
+                </div>
+              </div>
+            )}
+          </article>
+        )
+      })}
     </div>
   )
 }
@@ -2468,6 +2782,37 @@ function getMemberPermissions(profile) {
 
 function getProfileName(user, profile) {
   return profile?.displayName || user?.displayName || user?.email || '이름 없음'
+}
+
+function buildChangeRequestPrompt({ title, location, detail, expected, authorName, imageCount = 0, imageNames = [] }) {
+  const safeTitle = title?.trim() || '수정요청 제목 미입력'
+  const safeLocation = location?.trim() || '화면 위치 미입력'
+  const safeDetail = detail?.trim() || '수정해야 하는 내용 미입력'
+  const safeExpected = expected?.trim() || '원하는 결과 미입력'
+  const imageLine = imageCount > 0
+    ? `첨부 캡처: ${imageCount}장${imageNames.length ? ` (${imageNames.join(', ')})` : ''}`
+    : '첨부 캡처: 없음'
+
+  return [
+    '아래 수정요청을 기준으로 현재 주간업무 대시보드를 개선해줘.',
+    '',
+    `[요청자] ${authorName || '작성자 미입력'}`,
+    `[요청 제목] ${safeTitle}`,
+    `[화면 위치] ${safeLocation}`,
+    `[캡처 여부] ${imageLine}`,
+    '',
+    '[현재 문제/수정해야 할 내용]',
+    safeDetail,
+    '',
+    '[원하는 결과]',
+    safeExpected,
+    '',
+    '[작업 기준]',
+    '- 기존 Firebase/Firestore/Vercel 구조를 유지해줘.',
+    '- 사용자 데이터가 삭제되지 않도록 기존 저장 구조를 보존해줘.',
+    '- 수정 후 로컬에서 확인해야 할 다음 실행 단계를 알려줘.',
+    '- 막혔던 방식은 재시도하지 말고 다른 방법을 제안해줘.',
+  ].join('\n')
 }
 
 function compressProgressImage(file) {

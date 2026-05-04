@@ -201,7 +201,7 @@ export default async function handler(req, res) {
       progressLogs,
       actionItems,
       kpis,
-    }, { maxOutputTokens: 1400 })
+    }, { maxOutputTokens: 3200 })
 
     const report = {
       ...result,

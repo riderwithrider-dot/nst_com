@@ -68,6 +68,33 @@ export async function uploadProgressImages(teamId, uid, weekKey, taskId, progres
   return Promise.all(uploads)
 }
 
+export async function uploadChangeRequestImages(teamId, uid, requestId, files) {
+  assertStorage()
+  const uploads = Array.from(files || []).map(async (file, index) => {
+    const name = safeFileName(file.name)
+    const path = `teams/${teamId}/changeRequests/${requestId}/${uid}/${Date.now()}-${index}-${name}`
+    const fileRef = storageRef(storage, path)
+    await uploadBytes(fileRef, file, {
+      contentType: file.type || 'image/jpeg',
+      customMetadata: {
+        teamId,
+        uid,
+        requestId,
+      },
+    })
+    const url = await getDownloadURL(fileRef)
+    return {
+      url,
+      path,
+      name,
+      size: file.size,
+      contentType: file.type || 'image/jpeg',
+    }
+  })
+
+  return Promise.all(uploads)
+}
+
 export async function deleteStorageFiles(paths = []) {
   assertStorage()
   await Promise.all(paths.filter(Boolean).map(path => deleteObject(storageRef(storage, path))))
@@ -501,6 +528,14 @@ export function subscribeDailyReport(teamId, dateKey, callback) {
   })
 }
 
+export function subscribeDailyReports(teamId, callback) {
+  assertDb()
+  const reportsRef = collection(db, 'teams', teamId, 'reports')
+  return onSnapshot(query(reportsRef, orderBy('dateKey', 'desc')), snap => {
+    callback(snap.docs.map(item => ({ id: item.id, ...item.data() })))
+  })
+}
+
 export async function saveDailyReport(teamId, dateKey, report) {
   assertDb()
   await setDoc(doc(db, 'teams', teamId, 'reports', `daily-${dateKey}`), {
@@ -530,4 +565,20 @@ export async function addIdeaNote(teamId, uid, note) {
 export async function deleteIdeaNote(teamId, uid, noteId) {
   assertDb()
   await deleteDoc(doc(db, 'teams', teamId, 'members', uid, 'notes', noteId))
+}
+
+export function subscribeChangeRequests(teamId, callback) {
+  assertDb()
+  const requestsRef = collection(db, 'teams', teamId, 'changeRequests')
+  return onSnapshot(query(requestsRef, orderBy('createdAt', 'desc')), snap => {
+    callback(snap.docs.map(item => ({ id: item.id, ...item.data() })))
+  })
+}
+
+export async function addChangeRequest(teamId, request) {
+  assertDb()
+  await setDoc(doc(db, 'teams', teamId, 'changeRequests', request.id), {
+    ...request,
+    updatedAt: serverTimestamp(),
+  })
 }
