@@ -65,6 +65,10 @@ service cloud.firestore {
       match /changeRequests/{requestId} {
         allow read, write: if isTeamMember(teamId);
       }
+
+      match /aiUsageRecords/{recordId} {
+        allow read, write: if isTeamMember(teamId);
+      }
     }
   }
 }

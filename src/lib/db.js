@@ -606,3 +606,24 @@ export async function addChangeRequest(teamId, request) {
     updatedAt: serverTimestamp(),
   })
 }
+
+export function subscribeAiUsageRecords(teamId, callback) {
+  assertDb()
+  const recordsRef = collection(db, 'teams', teamId, 'aiUsageRecords')
+  return onSnapshot(query(recordsRef, orderBy('createdAt', 'desc')), snap => {
+    callback(snap.docs.map(item => ({ id: item.id, ...item.data() })))
+  })
+}
+
+export async function addAiUsageRecord(teamId, record) {
+  assertDb()
+  await setDoc(doc(db, 'teams', teamId, 'aiUsageRecords', record.id), {
+    ...record,
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function deleteAiUsageRecord(teamId, recordId) {
+  assertDb()
+  await deleteDoc(doc(db, 'teams', teamId, 'aiUsageRecords', recordId))
+}

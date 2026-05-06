@@ -11,35 +11,33 @@ Write-Host "====================================" -ForegroundColor Cyan
 Write-Host ""
 
 # 1. Show changed files
-Write-Host "=== 변경된 파일 ===" -ForegroundColor Yellow
+Write-Host "=== Changed files ===" -ForegroundColor Yellow
 git status --short
 Write-Host ""
 
 # 2. Read commit message
-Write-Host "=== 커밋 메시지 (그냥 Enter = 자동 생성) ===" -ForegroundColor Yellow
-Write-Host "  예: Step 2.5 작성자 칩 + KPI 그룹 정렬" -ForegroundColor DarkGray
-$msg = Read-Host "메시지"
+Write-Host "=== Commit message (just Enter = auto generated) ===" -ForegroundColor Yellow
+Write-Host "  ex: Step 2.7 history expand + image + line 12px" -ForegroundColor DarkGray
+$msg = Read-Host "Message"
 
 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm"
-$autoUsed = $false
 
 if ([string]::IsNullOrWhiteSpace($msg)) {
     $msg = "update " + (Get-Date -Format "yyyy-MM-dd-HH-mm")
-    $autoUsed = $true
-    Write-Host "  -> 자동 메시지: $msg" -ForegroundColor DarkGray
+    Write-Host "  -> auto: $msg" -ForegroundColor DarkGray
 } else {
-    Write-Host "  -> 메시지: $msg" -ForegroundColor DarkGray
+    Write-Host "  -> message: $msg" -ForegroundColor DarkGray
 }
 
 # 3. Update CHANGELOG.md (insert new entry under "# Changelog")
 Write-Host ""
-Write-Host "=== CHANGELOG.md 갱신 ===" -ForegroundColor Yellow
+Write-Host "=== Updating CHANGELOG.md ===" -ForegroundColor Yellow
 
 $entry = "- [$timestamp] $msg"
 
 if (-not (Test-Path "CHANGELOG.md")) {
     "# Changelog`r`n" | Set-Content -Path "CHANGELOG.md" -Encoding UTF8 -NoNewline
-    Write-Host "  -> CHANGELOG.md 새로 생성" -ForegroundColor DarkGray
+    Write-Host "  -> CHANGELOG.md created" -ForegroundColor DarkGray
 }
 
 $existing = Get-Content "CHANGELOG.md" -Raw -Encoding UTF8
@@ -70,7 +68,7 @@ if (-not $inserted) {
 }
 
 ($result -join "`r`n") | Set-Content -Path "CHANGELOG.md" -Encoding UTF8 -NoNewline
-Write-Host "  ✓ 추가됨: $entry" -ForegroundColor Green
+Write-Host "  added: $entry" -ForegroundColor Green
 
 # 4. Git add + commit
 Write-Host ""
@@ -79,8 +77,8 @@ git add .
 git commit -m "$msg"
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
-    Write-Host "커밋 실패 (변경사항 없거나 다른 오류)" -ForegroundColor Red
-    Read-Host "Enter를 눌러 종료"
+    Write-Host "Commit failed (no changes or other error)" -ForegroundColor Red
+    Read-Host "Press Enter to exit"
     exit 1
 }
 
@@ -90,14 +88,14 @@ Write-Host "=== git push origin main ===" -ForegroundColor Yellow
 git push origin main
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
-    Write-Host "푸시 실패. 위 오류 확인" -ForegroundColor Red
-    Read-Host "Enter를 눌러 종료"
+    Write-Host "Push failed. Check error above" -ForegroundColor Red
+    Read-Host "Press Enter to exit"
     exit 1
 }
 
 Write-Host ""
 Write-Host "====================================" -ForegroundColor Green
-Write-Host "  ✓ 완료. Vercel 배포 ~1분 후 시작" -ForegroundColor Green
+Write-Host "  Done. Vercel deploy starts in ~1 min" -ForegroundColor Green
 Write-Host "====================================" -ForegroundColor Green
 Write-Host ""
-Read-Host "Enter를 눌러 닫기"
+Read-Host "Press Enter to close"

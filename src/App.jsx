@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { auth, googleProvider, isFirebaseConfigured } from './lib/firebase'
 import {
+  addAiUsageRecord,
   addIdeaNote,
   addActionItemComment,
   addActionItemCommentReply,
@@ -34,6 +35,7 @@ import {
   createActionItem,
   createKpi,
   deleteStorageFiles,
+  deleteAiUsageRecord,
   deleteActionItemComment,
   deleteIdeaNote,
   deleteKpi,
@@ -44,6 +46,7 @@ import {
   saveDailyReport,
   seedInitialData,
   shareWeekToTeam,
+  subscribeAiUsageRecords,
   subscribeActionItems,
   subscribeChangeRequests,
   subscribeIdeaNotes,
@@ -79,11 +82,14 @@ import {
 } from './lib/constants'
 import { daysUntil, formatDate, generateId, getWeekKey, weekKeyToLabel } from './lib/date'
 import { requestGemini } from './lib/ai'
+import FlowDemoBoard from './FlowDemoBoard'
 
 const VIEWS = [
   { id: 'home', label: '팀장 홈', icon: Home, managerOnly: true },
   { id: 'personal', label: '내 업무', icon: ListChecks },
+  { id: 'aiUsage', label: 'AI 활용 기록', icon: Bot },
   { id: 'team', label: '팀 보드', icon: Users },
+  { id: 'flow_demo', label: '🧪 흐름 미리보기', icon: Activity },
   { id: 'report', label: '보고 초안', icon: ClipboardList, managerOnly: true },
   { id: 'requests', label: '수정요청사항', icon: MessageSquareText },
   { id: 'admin', label: '구성원 관리', icon: Settings, managerOnly: true },
@@ -91,6 +97,9 @@ const VIEWS = [
 
 const MAX_PROGRESS_IMAGES = 3
 const MAX_REQUEST_IMAGES = 5
+const AI_USD_TO_KRW = 1400
+const AI_MONTHLY_COST_KRW = 1120000
+const DEFAULT_HOURLY_RATE_KRW = 40000
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -363,6 +372,9 @@ function Dashboard({ user, bootError }) {
         {activeView === 'personal' && (
           <PersonalBoard user={user} memberProfile={memberProfile} weekKey={weekKey} weekLabel={weekLabel} />
         )}
+        {activeView === 'aiUsage' && (
+          <AiUsageBoard user={user} memberProfile={memberProfile} weekKey={weekKey} />
+        )}
         {activeView === 'team' && (
           <TeamBoard
             user={user}
@@ -382,6 +394,7 @@ function Dashboard({ user, bootError }) {
             kpis={kpis}
           />
         )}
+        {activeView === 'flow_demo' && <FlowDemoBoard />}
         {activeView === 'requests' && (
           <ChangeRequestBoard user={user} memberProfile={memberProfile} />
         )}
@@ -594,6 +607,359 @@ function ChangeRequestBoard({ user, memberProfile }) {
           {requests.length === 0 && <EmptyText text="아직 저장된 수정요청이 없습니다." />}
         </div>
       </Panel>
+    </main>
+  )
+}
+
+function AiUsageBoard({ user, memberProfile, weekKey }) {
+  const [records, setRecords] = useState([])
+  const [weekTasks, setWeekTasks] = useState([])
+  const [teamFilter, setTeamFilter] = useState('all')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [logText, setLogText] = useState('')
+  const [logFileName, setLogFileName] = useState('')
+  const [draft, setDraft] = useState({
+    subteam: memberProfile?.subteam || 'commerce',
+    taskId: '',
+    aiTool: 'ChatGPT / Gemini / Claude',
+    useCase: '',
+    output: '',
+    impact: '',
+    baselineMinutes: '',
+    aiMinutes: '',
+    monthlyCount: '1',
+    hourlyRateUsd: String(DEFAULT_HOURLY_RATE_KRW),
+    costAvoidedUsd: '',
+    revenueImpactUsd: '',
+    nextStep: '',
+  })
+  const canManage = memberProfile?.role === 'manager' || isManagerUser(user)
+
+  useEffect(() => subscribeAiUsageRecords(DEFAULT_TEAM_ID, setRecords), [])
+  useEffect(() => subscribeWeekTasks(DEFAULT_TEAM_ID, user.uid, weekKey, setWeekTasks), [user.uid, weekKey])
+
+  const visibleRecords = records.filter(record => teamFilter === 'all' || record.subteam === teamFilter)
+  const selectedTask = weekTasks.find(task => task.id === draft.taskId)
+  const calculatedTimeSavedHours = Math.max(0, ((toNumber(draft.baselineMinutes) - toNumber(draft.aiMinutes)) * Math.max(1, toNumber(draft.monthlyCount))) / 60)
+  const calculatedLaborValueKrw = calculatedTimeSavedHours * toNumber(draft.hourlyRateUsd)
+  const calculatedValueKrw = Math.round(calculatedLaborValueKrw + toNumber(draft.costAvoidedUsd) + toNumber(draft.revenueImpactUsd))
+  const totalTimeSaved = sumNumbers(visibleRecords.map(record => record.timeSavedHours))
+  const totalValueKrw = sumNumbers(visibleRecords.map(getRecordValueKrw))
+  const monthlyAiCostKrw = AI_MONTHLY_COST_KRW
+  const roiRate = monthlyAiCostKrw > 0 ? Math.round((totalValueKrw / monthlyAiCostKrw) * 100) : 0
+  const teamSummaries = SUBTEAMS.map(team => {
+    const teamRecords = records.filter(record => record.subteam === team.id)
+    return {
+      ...team,
+      count: teamRecords.length,
+      hours: sumNumbers(teamRecords.map(record => record.timeSavedHours)),
+      value: sumNumbers(teamRecords.map(getRecordValueKrw)),
+    }
+  })
+
+  function updateDraft(field, value) {
+    setDraft(prev => ({ ...prev, [field]: value }))
+  }
+
+  function applyLogToDraft(text = logText, fileName = logFileName) {
+    const parsed = parseAiUsageLog(text, weekTasks)
+    if (!parsed.hasContent) {
+      setError('가져올 AI 업무 로그 내용이 없습니다. MD/TXT 파일을 첨부하거나 로그 내용을 붙여넣어주세요.')
+      return
+    }
+
+    setDraft(prev => ({
+      ...prev,
+      subteam: prev.subteam || memberProfile?.subteam || 'commerce',
+      taskId: parsed.taskId || prev.taskId,
+      aiTool: parsed.aiTool || prev.aiTool,
+      useCase: parsed.useCase || prev.useCase,
+      output: parsed.output || prev.output,
+      impact: parsed.impact || prev.impact,
+      baselineMinutes: parsed.baselineMinutes || prev.baselineMinutes,
+      aiMinutes: parsed.aiMinutes || prev.aiMinutes,
+      monthlyCount: parsed.monthlyCount || prev.monthlyCount || '1',
+      hourlyRateUsd: parsed.hourlyRateUsd || prev.hourlyRateUsd || String(DEFAULT_HOURLY_RATE_KRW),
+      costAvoidedUsd: parsed.costAvoidedUsd || prev.costAvoidedUsd,
+      revenueImpactUsd: parsed.revenueImpactUsd || prev.revenueImpactUsd,
+      nextStep: parsed.nextStep || prev.nextStep,
+    }))
+    setError('')
+    setMessage(`${fileName ? `${fileName} ` : ''}로그를 분석해 AI 활용 기록 초안을 자동으로 채웠습니다.`)
+  }
+
+  async function handleLogFileChange(event) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    const isTextFile = /\.(md|markdown|txt)$/i.test(file.name) || file.type.startsWith('text/')
+    if (!isTextFile) {
+      setError('AI 업무 로그는 MD 또는 TXT 파일로 첨부해주세요.')
+      return
+    }
+    const text = await file.text()
+    setLogText(text)
+    setLogFileName(file.name)
+    applyLogToDraft(text, file.name)
+  }
+
+  function copyLogTemplate() {
+    const template = buildAiUsageLogTemplate(selectedTask)
+    navigator.clipboard?.writeText(template)
+    setMessage('AI 업무 로그 MD 템플릿을 복사했습니다. 사용한 AI 대화나 작업 로그에 붙여넣어 기록하면 됩니다.')
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+    const form = event.currentTarget
+    if (!selectedTask || !draft.useCase.trim()) {
+      setError('내 업무에서 AI 활용 기록을 연결할 프로젝트와 AI 활용 내용을 선택/입력해주세요.')
+      return
+    }
+
+    setSaving(true)
+    setError('')
+    setMessage('')
+    try {
+      const timeSavedHours = calculatedTimeSavedHours
+      const costAvoidedKrw = toNumber(draft.costAvoidedUsd)
+      const revenueImpactKrw = toNumber(draft.revenueImpactUsd)
+      const hourlyRateKrw = toNumber(draft.hourlyRateUsd)
+      const estimatedValueKrw = calculatedValueKrw
+      await addAiUsageRecord(DEFAULT_TEAM_ID, {
+        id: generateId(),
+        subteam: draft.subteam,
+        subteamLabel: getSubteamLabel(draft.subteam),
+        taskId: selectedTask.id,
+        taskTitle: selectedTask.title,
+        taskStatus: selectedTask.status,
+        taskPriority: selectedTask.priority,
+        taskImpact: selectedTask.impact || '',
+        aiTool: draft.aiTool.trim(),
+        useCase: draft.useCase.trim(),
+        output: draft.output.trim(),
+        impact: draft.impact.trim(),
+        timeSavedHours,
+        baselineMinutes: toNumber(draft.baselineMinutes),
+        aiMinutes: toNumber(draft.aiMinutes),
+        monthlyCount: Math.max(1, toNumber(draft.monthlyCount)),
+        hourlyRateUsd: hourlyRateKrw,
+        laborValueUsd: Math.round(calculatedLaborValueKrw),
+        costAvoidedUsd: costAvoidedKrw,
+        revenueImpactUsd: revenueImpactKrw,
+        estimatedValueUsd: estimatedValueKrw,
+        hourlyRateKrw,
+        laborValueKrw: Math.round(calculatedLaborValueKrw),
+        costAvoidedKrw,
+        revenueImpactKrw,
+        estimatedValueKrw,
+        currency: 'KRW',
+        calculationBasis: `(${toNumber(draft.baselineMinutes)}분 - ${toNumber(draft.aiMinutes)}분) × 월 ${Math.max(1, toNumber(draft.monthlyCount))}회 ÷ 60 × ${formatKrw(hourlyRateKrw)}/h + 외주/리서치 ${formatKrw(costAvoidedKrw)} + 기회가치 ${formatKrw(revenueImpactKrw)}`,
+        nextStep: draft.nextStep.trim(),
+        sourceLog: logText.trim(),
+        sourceLogFileName: logFileName,
+        autoFilledFromLog: Boolean(logText.trim()),
+        authorUid: user.uid,
+        authorName: getProfileName(user, memberProfile),
+        authorEmail: user.email || '',
+        createdAt: new Date().toISOString(),
+      })
+      setDraft({
+        subteam: memberProfile?.subteam || 'commerce',
+        taskId: '',
+        aiTool: 'ChatGPT / Gemini / Claude',
+        useCase: '',
+        output: '',
+        impact: '',
+        baselineMinutes: '',
+        aiMinutes: '',
+        monthlyCount: '1',
+        hourlyRateUsd: String(DEFAULT_HOURLY_RATE_KRW),
+        costAvoidedUsd: '',
+        revenueImpactUsd: '',
+        nextStep: '',
+      })
+      setLogText('')
+      setLogFileName('')
+      setMessage('AI 활용 기록이 저장되었습니다. CSO 보고용 가치 데이터에 반영됩니다.')
+      form?.reset()
+    } catch (err) {
+      setError(err.message || 'AI 활용 기록 저장에 실패했습니다.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDelete(record) {
+    if (!canManage && record.authorUid !== user.uid) {
+      setError('작성자 또는 관리자만 삭제할 수 있습니다.')
+      return
+    }
+    await deleteAiUsageRecord(DEFAULT_TEAM_ID, record.id)
+  }
+
+  const csoSummary = [
+    `AI 활용 기록 ${visibleRecords.length}건`,
+    `누적 절감시간 ${formatNumber(totalTimeSaved)}시간`,
+    `추정 가치 ${formatKrw(totalValueKrw)}`,
+    `월 AI 비용 ${formatKrw(monthlyAiCostKrw)} 대비 회수율 ${roiRate}%`,
+  ].join(' · ')
+
+  return (
+    <main className="content-grid ai-usage-layout">
+      <section className="view-stack">
+        <Panel title="AI 활용 가치 대시보드" icon={Bot}>
+          <div className="metric-grid compact">
+            <MetricCard icon={Bot} label="AI 활용 기록" value={`${visibleRecords.length}건`} helper={teamFilter === 'all' ? '전체 팀' : getSubteamLabel(teamFilter)} tone="blue" />
+            <MetricCard icon={Clock} label="절감 시간" value={`${formatNumber(totalTimeSaved)}h`} helper="업무시간 환산" tone="teal" />
+            <MetricCard icon={BarChart3} label="추정 가치" value={formatKrw(totalValueKrw)} helper={`월 ${formatKrw(monthlyAiCostKrw)} 대비 ${roiRate}%`} tone="green" />
+          </div>
+          <div className="filter-row">
+            <button className={teamFilter === 'all' ? 'active' : ''} onClick={() => setTeamFilter('all')}>전체</button>
+            {SUBTEAMS.map(team => (
+              <button key={team.id} className={teamFilter === team.id ? 'active' : ''} onClick={() => setTeamFilter(team.id)}>
+                {team.label}
+              </button>
+            ))}
+          </div>
+          <div className="executive-brief">{csoSummary}</div>
+        </Panel>
+
+        <Panel title="AI 활용 기록 작성" icon={ClipboardList}>
+          {error && <div className="alert error slim">{error}</div>}
+          {message && <div className="alert slim">{message}</div>}
+          <form className="ai-usage-form" onSubmit={handleSubmit}>
+            <div className="form-row">
+              <select value={draft.subteam} onChange={event => updateDraft('subteam', event.target.value)}>
+                {SUBTEAMS.map(team => <option key={team.id} value={team.id}>{team.label}</option>)}
+              </select>
+              <select value={draft.taskId} onChange={event => updateDraft('taskId', event.target.value)}>
+                <option value="">내 업무에서 프로젝트 선택</option>
+                {weekTasks.map(task => (
+                  <option key={task.id} value={task.id}>
+                    {task.title} · {STATUS_META[task.status]?.label || task.status || '상태 미입력'}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {weekTasks.length === 0 && <div className="alert slim">먼저 내 업무 탭에서 AI 활용을 기록할 업무를 추가해주세요.</div>}
+            <div className="ai-log-import">
+              <div>
+                <strong>AI 업무 로그로 자동 채우기</strong>
+                <p>업무마다 숫자를 다시 계산하지 않도록, AI 작업 로그 MD/TXT를 첨부하거나 붙여넣으면 활용 방식·산출물·절감시간을 보수적으로 추정합니다.</p>
+              </div>
+              <textarea
+                value={logText}
+                onChange={event => setLogText(event.target.value)}
+                placeholder={[
+                  '# AI 업무 로그',
+                  '- 연결 업무: 현대홈쇼핑 신상품런칭',
+                  '- 사용 AI: ChatGPT',
+                  '- 활용 내용: 방송 제안서 초안 작성',
+                  '- 산출물: 제안 메일 초안, 상품 비교표',
+                  '- 기존 소요시간: 120분',
+                  '- AI 후 소요시간: 35분',
+                  '- 외주/리서치 대체비: 0원',
+                  '- 매출/기회가치: 0원',
+                  '- 다음 액션: MD 피드백 반영',
+                ].join('\n')}
+                rows={6}
+              />
+              <div className="request-actions">
+                <label className="file-action">
+                  로그 MD/TXT 첨부
+                  <input type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" onChange={handleLogFileChange} />
+                </label>
+                <button type="button" className="secondary-action" onClick={() => applyLogToDraft()}>
+                  로그 분석해서 자동 채우기
+                </button>
+                <button type="button" className="secondary-action" onClick={copyLogTemplate}>
+                  로그 템플릿 복사
+                </button>
+              </div>
+              {logFileName && <span className="muted-text">첨부 로그: {logFileName}</span>}
+            </div>
+            <input value={draft.aiTool} onChange={event => updateDraft('aiTool', event.target.value)} placeholder="사용 AI/툴 예: ChatGPT, Gemini, Claude, Perplexity" />
+            <textarea value={draft.useCase} onChange={event => updateDraft('useCase', event.target.value)} placeholder="AI를 어떻게 활용했나요? 예: 홈쇼핑 제안서 초안 작성, 상품 비교표 정리, 고객 VOC 요약" rows={3} />
+            <textarea value={draft.output} onChange={event => updateDraft('output', event.target.value)} placeholder="만든 산출물/결과물 예: 제안서 1차안, 보고 메일 초안, 시장조사 표" rows={3} />
+            <textarea value={draft.impact} onChange={event => updateDraft('impact', event.target.value)} placeholder="업무 가치 예: 의사결정 빨라짐, 외주비 절감, 보고 품질 개선, 매출 기회 발굴" rows={3} />
+            <div className="ai-value-guide">
+              <strong>가치 산정 방식</strong>
+              <span>절감시간 = (기존 소요시간 - AI 활용 후 소요시간) × 월 반복횟수</span>
+              <span>추정가치 = 절감시간 × 시간당 기준가 + 외주/리서치 대체비 + 매출/기회가치</span>
+            </div>
+            <div className="form-row">
+              <input type="number" min="0" step="5" value={draft.baselineMinutes} onChange={event => updateDraft('baselineMinutes', event.target.value)} placeholder="기존 소요시간(분)" />
+              <input type="number" min="0" step="5" value={draft.aiMinutes} onChange={event => updateDraft('aiMinutes', event.target.value)} placeholder="AI 후 소요시간(분)" />
+              <input type="number" min="1" step="1" value={draft.monthlyCount} onChange={event => updateDraft('monthlyCount', event.target.value)} placeholder="월 반복횟수" />
+            </div>
+            <div className="form-row">
+              <input type="number" min="0" step="1000" value={draft.hourlyRateUsd} onChange={event => updateDraft('hourlyRateUsd', event.target.value)} placeholder="시간당 기준가(원)" />
+              <input type="number" min="0" step="10000" value={draft.costAvoidedUsd} onChange={event => updateDraft('costAvoidedUsd', event.target.value)} placeholder="외주/리서치 대체비(원)" />
+              <input type="number" min="0" step="10000" value={draft.revenueImpactUsd} onChange={event => updateDraft('revenueImpactUsd', event.target.value)} placeholder="매출/기회가치(원)" />
+            </div>
+            <div className="ai-value-result">
+              <strong>자동 계산</strong>
+              <span>절감시간 {formatNumber(calculatedTimeSavedHours)}h</span>
+              <span>시간가치 {formatKrw(calculatedLaborValueKrw)}</span>
+              <span>총 추정가치 {formatKrw(calculatedValueKrw)}</span>
+            </div>
+            <input value={draft.nextStep} onChange={event => updateDraft('nextStep', event.target.value)} placeholder="다음 액션 / 추가 활용 계획" />
+            <button className="primary-action wide" type="submit" disabled={saving}>
+              <Plus size={16} />
+              {saving ? '저장 중' : 'AI 활용 기록 저장'}
+            </button>
+          </form>
+        </Panel>
+      </section>
+
+      <section className="view-stack">
+        <Panel title="팀별 AI 활용 현황" icon={Users}>
+          <div className="ai-team-summary">
+            {teamSummaries.map(team => (
+              <article className="ai-team-card" key={team.id}>
+                <strong>{team.label}</strong>
+                <span>{team.count}건 · {formatNumber(team.hours)}h 절감 · {formatKrw(team.value)}</span>
+              </article>
+            ))}
+          </div>
+        </Panel>
+
+        <Panel title="AI 활용 기록 리스트" icon={ListChecks}>
+          <div className="ai-usage-list">
+            {visibleRecords.map(record => (
+              <article className="ai-usage-card" key={record.id}>
+                <div className="note-head">
+                  <Badge tone="teal">{record.subteamLabel || getSubteamLabel(record.subteam)}</Badge>
+                  <span>{record.authorName || '작성자'} · {formatCommentTime(record.createdAt)}</span>
+                </div>
+                <h3>{record.taskTitle}</h3>
+                <p><strong>활용 방식</strong> {record.useCase}</p>
+                {record.output && <p><strong>산출물</strong> {record.output}</p>}
+                {record.impact && <p><strong>가치</strong> {record.impact}</p>}
+                <div className="ledger-grid">
+                  <span>툴: {record.aiTool || '미입력'}</span>
+                  <span>절감: {formatNumber(record.timeSavedHours)}h</span>
+                  <span>절감비용: {formatKrw(getRecordCostAvoidedKrw(record))}</span>
+                  <span>추정가치: {formatKrw(getRecordValueKrw(record))}</span>
+                </div>
+                {record.autoFilledFromLog && (
+                  <div className="log-source-chip">로그 기반 자동 기입{record.sourceLogFileName ? ` · ${record.sourceLogFileName}` : ''}</div>
+                )}
+                {record.calculationBasis && <p><strong>산정근거</strong> {record.calculationBasis}</p>}
+                {record.nextStep && <div className="executive-brief">{record.nextStep}</div>}
+                {(canManage || record.authorUid === user.uid) && (
+                  <button className="icon-button" onClick={() => handleDelete(record)} title="삭제">
+                    <Trash2 size={16} />
+                  </button>
+                )}
+              </article>
+            ))}
+            {visibleRecords.length === 0 && <EmptyText text="아직 AI 활용 기록이 없습니다. AI로 진행한 업무와 만들어낸 가치를 기록해보세요." />}
+          </div>
+        </Panel>
+      </section>
     </main>
   )
 }
@@ -2964,6 +3330,199 @@ function getMemberPermissions(profile) {
 
 function getProfileName(user, profile) {
   return profile?.displayName || user?.displayName || user?.email || '이름 없음'
+}
+
+function toNumber(value) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number : 0
+}
+
+function sumNumbers(values) {
+  return values.reduce((sum, value) => sum + toNumber(value), 0)
+}
+
+function formatNumber(value) {
+  return toNumber(value).toLocaleString('en-US', { maximumFractionDigits: 1 })
+}
+
+function formatKrw(value) {
+  return `${Math.round(toNumber(value)).toLocaleString('ko-KR')}원`
+}
+
+function getRecordValueKrw(record) {
+  if (record?.currency === 'KRW' || record?.estimatedValueKrw !== undefined) {
+    return toNumber(record.estimatedValueKrw ?? record.estimatedValueUsd)
+  }
+  return Math.round(toNumber(record?.estimatedValueUsd) * AI_USD_TO_KRW)
+}
+
+function getRecordCostAvoidedKrw(record) {
+  if (record?.currency === 'KRW' || record?.costAvoidedKrw !== undefined) {
+    return toNumber(record.costAvoidedKrw ?? record.costAvoidedUsd)
+  }
+  return Math.round(toNumber(record?.costAvoidedUsd) * AI_USD_TO_KRW)
+}
+
+function parseAiUsageLog(rawText, weekTasks = []) {
+  const text = (rawText || '').trim()
+  if (!text) return { hasContent: false }
+
+  const matchedTask = weekTasks.find(task => task.title && text.includes(task.title))
+  const useCase = pickLogSection(text, ['활용 내용', '활용방식', '사용 내용', '작업 내용', '프롬프트', 'ai 활용'])
+    || summarizeLogLines(text, ['활용', '작성', '정리', '분석', '요약', '초안', '비교'])
+  const output = pickLogSection(text, ['산출물', '결과물', '결과', '만든 것', '작성물'])
+    || summarizeLogLines(text, ['산출물', '초안', '표', '메일', '보고', '제안서', '리스트'])
+  const nextStep = pickLogSection(text, ['다음 액션', '후속', 'next', 'todo', '추가 활용', '계획'])
+    || summarizeLogLines(text, ['다음', '후속', '반영', '공유', '검토'])
+  const impact = pickLogSection(text, ['업무 가치', '가치', '효과', '성과', '기여'])
+    || guessAiImpact(text, output)
+  const aiTool = guessAiTool(text)
+  const baselineMinutes = parseDurationByKeywords(text, ['기존 소요시간', '기존', '원래', 'before', 'baseline'])
+    || guessBaselineMinutes(text)
+  const aiMinutes = parseDurationByKeywords(text, ['ai 후 소요시간', 'ai 후', '실제', 'after', '완료시간'])
+    || guessAiMinutes(text, baselineMinutes)
+  const monthlyCount = parsePlainNumberByKeywords(text, ['월 반복횟수', '반복횟수', 'monthly count'])
+  const costAvoidedKrw = parseMoneyByKeywords(text, ['외주', '리서치', '대체비', '비용절감'])
+  const revenueImpactKrw = parseMoneyByKeywords(text, ['매출', '기회', '수주', '전환'])
+
+  return {
+    hasContent: true,
+    taskId: matchedTask?.id || '',
+    aiTool,
+    useCase,
+    output,
+    impact,
+    baselineMinutes: String(baselineMinutes || ''),
+    aiMinutes: String(aiMinutes || ''),
+    monthlyCount: monthlyCount ? String(monthlyCount) : '1',
+    hourlyRateUsd: String(DEFAULT_HOURLY_RATE_KRW),
+    costAvoidedUsd: costAvoidedKrw ? String(costAvoidedKrw) : '',
+    revenueImpactUsd: revenueImpactKrw ? String(revenueImpactKrw) : '',
+    nextStep,
+  }
+}
+
+function pickLogSection(text, labels) {
+  const lines = text.split(/\r?\n/)
+  const collected = []
+  let collecting = false
+  for (const line of lines) {
+    const clean = normalizeLogLine(line)
+    const isTarget = labels.some(label => clean.toLowerCase().includes(label.toLowerCase()))
+    const isNewSection = /^#{1,6}\s/.test(line) || /^\[[^\]]+\]/.test(clean) || /^[-*]?\s*[^:：]{2,24}[:：]/.test(line)
+
+    if (isTarget) {
+      collecting = true
+      const inline = line.split(/[:：]/).slice(1).join(':').trim()
+      if (inline) collected.push(inline)
+      continue
+    }
+
+    if (collecting && isNewSection && collected.length > 0) break
+    if (collecting && clean) collected.push(clean)
+    if (collected.length >= 4) break
+  }
+  return collected.join('\n').trim()
+}
+
+function summarizeLogLines(text, keywords) {
+  const lines = text
+    .split(/\r?\n/)
+    .map(normalizeLogLine)
+    .filter(Boolean)
+    .filter(line => keywords.some(keyword => line.toLowerCase().includes(keyword.toLowerCase())))
+  return lines.slice(0, 3).join('\n')
+}
+
+function normalizeLogLine(line) {
+  return line
+    .replace(/^#{1,6}\s*/, '')
+    .replace(/^\s*[-*]\s*/, '')
+    .replace(/^\s*\d+[.)]\s*/, '')
+    .trim()
+}
+
+function guessAiTool(text) {
+  const candidates = ['ChatGPT', 'Gemini', 'Claude', 'Perplexity', 'Copilot', 'v0', 'Cursor', 'Codex']
+  const found = candidates.filter(tool => text.toLowerCase().includes(tool.toLowerCase()))
+  return found.length ? found.join(' / ') : 'ChatGPT / Gemini / Claude'
+}
+
+function parseDurationByKeywords(text, keywords) {
+  const lines = text.split(/\r?\n/)
+  for (const line of lines) {
+    if (!keywords.some(keyword => line.toLowerCase().includes(keyword.toLowerCase()))) continue
+    const match = line.match(/(\d+(?:\.\d+)?)\s*(시간|hour|hours|h|분|minute|minutes|m)?/i)
+    if (!match) continue
+    const value = Number(match[1])
+    const unit = match[2] || '분'
+    return /시간|hour|h/i.test(unit) ? Math.round(value * 60) : Math.round(value)
+  }
+  return 0
+}
+
+function parsePlainNumberByKeywords(text, keywords) {
+  const lines = text.split(/\r?\n/)
+  for (const line of lines) {
+    if (!keywords.some(keyword => line.toLowerCase().includes(keyword.toLowerCase()))) continue
+    const match = line.match(/(\d+(?:\.\d+)?)/)
+    if (match) return Math.max(1, Math.round(Number(match[1])))
+  }
+  return 0
+}
+
+function parseMoneyByKeywords(text, keywords) {
+  const lines = text.split(/\r?\n/)
+  for (const line of lines) {
+    if (!keywords.some(keyword => line.toLowerCase().includes(keyword.toLowerCase()))) continue
+    const match = line.match(/\$?\s*(\d[\d,]*(?:\.\d+)?)\s*(원|만원|만 원|천원|천 원|달러|usd|\$)?/i)
+    if (!match) continue
+    const value = Number(match[1].replace(/,/g, ''))
+    const unit = match[2] || '원'
+    if (/만원|만 원/.test(unit)) return Math.round(value * 10000)
+    if (/천원|천 원/.test(unit)) return Math.round(value * 1000)
+    if (/달러|usd|\$/i.test(unit)) return Math.round(value * AI_USD_TO_KRW)
+    return Math.round(value)
+  }
+  return 0
+}
+
+function guessBaselineMinutes(text) {
+  const lower = text.toLowerCase()
+  if (/제안서|보고서|시장조사|리서치|forecast|분석/.test(lower)) return 120
+  if (/비교표|표|정리|voc|요약/.test(lower)) return 90
+  if (/메일|초안|문구|카피/.test(lower)) return 60
+  return 60
+}
+
+function guessAiMinutes(text, baselineMinutes) {
+  const lower = text.toLowerCase()
+  if (/검증|복잡|자료|리서치/.test(lower)) return Math.max(30, Math.round(baselineMinutes * 0.4))
+  if (/요약|메일|초안/.test(lower)) return Math.max(15, Math.round(baselineMinutes * 0.3))
+  return Math.max(20, Math.round(baselineMinutes * 0.5))
+}
+
+function guessAiImpact(text, output) {
+  if (/외주|리서치|시장조사|비교표/.test(text)) return '리서치/정리 시간을 줄이고 의사결정용 근거 자료를 빠르게 확보함'
+  if (/보고|메일|초안|제안서/.test(text + output)) return '보고/제안 초안 작성 시간을 줄이고 팀장 검토 가능한 1차 산출물을 빠르게 확보함'
+  return '반복 업무 시간을 줄이고 산출물 초안 품질과 실행 속도를 개선함'
+}
+
+function buildAiUsageLogTemplate(task) {
+  return [
+    '# AI 업무 로그',
+    `- 연결 업무: ${task?.title || '내 업무 프로젝트명'}`,
+    '- 사용 AI: ChatGPT / Gemini / Claude',
+    '- 활용 내용: ',
+    '- 산출물: ',
+    '- 업무 가치: ',
+    '- 기존 소요시간:  분',
+    '- AI 후 소요시간:  분',
+    '- 월 반복횟수: 1',
+    '- 외주/리서치 대체비: 0원',
+    '- 매출/기회가치: 0원',
+    '- 다음 액션: ',
+  ].join('\n')
 }
 
 function buildChangeRequestPrompt({ title, location, detail, expected, authorName, imageCount = 0, imageNames = [] }) {

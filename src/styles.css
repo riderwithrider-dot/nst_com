@@ -248,6 +248,11 @@ textarea:focus {
   align-items: start;
 }
 
+.ai-usage-layout {
+  grid-template-columns: minmax(0, 1.1fr) minmax(360px, 0.9fr);
+  align-items: start;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1274,6 +1279,112 @@ textarea:focus {
   font-size: 13px;
 }
 
+.ai-usage-form {
+  display: grid;
+  gap: 10px;
+}
+
+.ai-usage-form .form-row {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.ai-usage-form textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+
+.ai-log-import {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+
+.ai-log-import strong,
+.ai-log-import p {
+  margin: 0;
+}
+
+.ai-log-import p,
+.muted-text {
+  color: var(--muted);
+}
+
+.ai-log-import textarea {
+  min-height: 140px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.ai-team-summary,
+.ai-usage-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ai-team-card,
+.ai-usage-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.ai-team-card {
+  background: var(--teal-soft);
+}
+
+.ai-team-card strong,
+.ai-usage-card h3,
+.ai-usage-card p {
+  margin: 0;
+}
+
+.ai-team-card span,
+.ai-usage-card p {
+  color: var(--muted);
+}
+
+.log-source-chip {
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--teal-soft);
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ai-usage-card .icon-button {
+  justify-self: end;
+}
+
+.ai-value-guide,
+.ai-value-result {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--teal-soft);
+  color: var(--muted);
+}
+
+.ai-value-guide strong,
+.ai-value-result strong {
+  color: var(--text);
+}
+
+.ai-value-result {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: center;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+}
+
 .request-form {
   display: grid;
   gap: 10px;
@@ -1629,6 +1740,204 @@ textarea:focus {
   margin: 0;
 }
 
+/* === FlowDemoBoard 임시 페이지 === */
+.flow-demo-intro {
+  font-size: 13px;
+  color: #6b7280;
+  line-height: 1.6;
+  margin: 0 0 16px;
+}
+
+.flow-demo-section {
+  margin-top: 28px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: white;
+}
+
+.flow-demo-section h3 {
+  margin: 0 0 6px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.flow-demo-desc {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.6;
+  margin: 0 0 16px;
+}
+
+.flow-demo-decision {
+  margin-top: 28px;
+  padding: 18px 20px;
+  background: rgba(20, 184, 166, 0.08);
+  border-radius: 10px;
+  border: 1px dashed rgba(20, 184, 166, 0.4);
+}
+
+.flow-demo-decision strong {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.flow-demo-decision ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+/* Tree (옵션 A) */
+.flow-tree-box {
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.8;
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 8px;
+}
+
+.flow-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.flow-tree-prefix {
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+
+.flow-tree-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.flow-tree-meta {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.flow-tree-merge {
+  font-size: 11px;
+  color: #b45309;
+  background: #fef3c7;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+/* Card Tree (옵션 B) */
+.flow-card-roots {
+  display: flex;
+  gap: 32px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  padding: 12px 0;
+}
+
+.flow-card-branch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.flow-card-box {
+  width: 200px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-left-width: 5px;
+  border-radius: 8px;
+  background: white;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  position: relative;
+}
+
+.flow-card-box.merged {
+  background: #fef3c7;
+}
+
+.flow-card-merge-tag {
+  position: absolute;
+  top: -10px;
+  right: 8px;
+  background: #b45309;
+  color: white;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.flow-card-box strong {
+  font-size: 13px;
+}
+
+.flow-card-box span {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.flow-card-children {
+  margin-top: 24px;
+  display: flex;
+  gap: 14px;
+  position: relative;
+}
+
+.flow-card-children::before {
+  content: '';
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  height: 24px;
+  border-left: 1px solid #cbd5e1;
+}
+
+.flow-card-merged {
+  width: 200px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 6px;
+  font-size: 11px;
+  color: #6b7280;
+  font-style: italic;
+}
+
+/* SVG Graph (옵션 C) */
+.flow-svg-wrap {
+  overflow-x: auto;
+  padding: 12px 0;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 8px;
+}
+
+/* Mermaid (옵션 D) */
+.flow-mermaid-wrap {
+  overflow-x: auto;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 8px;
+}
+
+.flow-mermaid-wrap svg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+
 .signal-row {
   display: flex;
   gap: 9px;
@@ -1819,7 +2128,8 @@ textarea:focus {
   .content-grid.two,
   .personal-layout,
   .report-layout,
-  .request-layout {
+  .request-layout,
+  .ai-usage-layout {
     grid-template-columns: 1fr;
   }
 
@@ -1854,6 +2164,7 @@ textarea:focus {
   .kpi-grid,
   .channel-grid,
   .report-source,
+  .ai-value-result,
   .member-grid,
   .subteam-choice-grid,
   .admin-member-fields,
@@ -1864,6 +2175,7 @@ textarea:focus {
   }
 
   .form-row,
+  .ai-usage-form .form-row,
   .note-form,
   .project-form-row,
   .kpi-create-form,
