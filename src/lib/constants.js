@@ -58,7 +58,7 @@ export const STATUS_META = {
   todo: { label: '대기', tone: 'gray' },
   doing: { label: '진행', tone: 'blue' },
   review: { label: '검토', tone: 'amber' },
-  blocked: { label: '막힘', tone: 'red' },
+  blocked: { label: '보류', tone: 'red' },
   done: { label: '완료', tone: 'green' },
 }
 
@@ -89,6 +89,7 @@ export const INITIAL_ACTION_ITEMS = [
     status: 'todo',
     priority: 'high',
     kpi: '채널 손익 가시화',
+    kpiLinks: [],
   },
   {
     id: 'action_lemon_forecast',
@@ -102,6 +103,7 @@ export const INITIAL_ACTION_ITEMS = [
     status: 'todo',
     priority: 'high',
     kpi: '레몬즙 판매계획',
+    kpiLinks: [],
   },
   {
     id: 'action_traders_research',
@@ -115,6 +117,7 @@ export const INITIAL_ACTION_ITEMS = [
     status: 'todo',
     priority: 'high',
     kpi: '대형마트 입점 준비',
+    kpiLinks: [],
   },
   {
     id: 'action_emart_strategy',
@@ -128,6 +131,7 @@ export const INITIAL_ACTION_ITEMS = [
     status: 'todo',
     priority: 'normal',
     kpi: '대형마트 입점 준비',
+    kpiLinks: [],
   },
   {
     id: 'action_rr_guide',
@@ -141,6 +145,7 @@ export const INITIAL_ACTION_ITEMS = [
     status: 'todo',
     priority: 'normal',
     kpi: '조직 실행력',
+    kpiLinks: [],
   },
   {
     id: 'action_owned_mall_meeting',
@@ -154,6 +159,7 @@ export const INITIAL_ACTION_ITEMS = [
     status: 'todo',
     priority: 'normal',
     kpi: '자사몰 성장',
+    kpiLinks: [],
   },
   {
     id: 'action_approval_briefing',
@@ -167,6 +173,7 @@ export const INITIAL_ACTION_ITEMS = [
     status: 'todo',
     priority: 'normal',
     kpi: '조직 실행력',
+    kpiLinks: [],
   },
   {
     id: 'action_all_sku_forecast',
@@ -180,6 +187,7 @@ export const INITIAL_ACTION_ITEMS = [
     status: 'todo',
     priority: 'high',
     kpi: 'Forecast 정확도',
+    kpiLinks: [],
   },
   {
     id: 'action_report_format',
@@ -193,6 +201,7 @@ export const INITIAL_ACTION_ITEMS = [
     status: 'todo',
     priority: 'normal',
     kpi: '보고 리드타임',
+    kpiLinks: [],
   },
   {
     id: 'action_emart_traders_listing',
@@ -206,6 +215,7 @@ export const INITIAL_ACTION_ITEMS = [
     status: 'todo',
     priority: 'high',
     kpi: '신규 채널 수',
+    kpiLinks: [],
   },
   {
     id: 'action_owned_mall_pilot',
@@ -219,6 +229,7 @@ export const INITIAL_ACTION_ITEMS = [
     status: 'todo',
     priority: 'normal',
     kpi: '자사몰 성장',
+    kpiLinks: [],
   },
   {
     id: 'action_independent_reporting',
@@ -232,6 +243,7 @@ export const INITIAL_ACTION_ITEMS = [
     status: 'todo',
     priority: 'normal',
     kpi: '보고 리드타임',
+    kpiLinks: [],
   },
 ]
 
@@ -245,6 +257,7 @@ export const INITIAL_KPIS = [
     unit: '%',
     owner: '커머스팀',
     color: 'teal',
+    autoComputed: false,
   },
   {
     id: 'kpi_lemon_sets',
@@ -255,6 +268,7 @@ export const INITIAL_KPIS = [
     unit: '세트',
     owner: '커머스팀',
     color: 'green',
+    autoComputed: false,
   },
   {
     id: 'kpi_owned_mall',
@@ -265,6 +279,7 @@ export const INITIAL_KPIS = [
     unit: '%',
     owner: '커머스팀',
     color: 'blue',
+    autoComputed: false,
   },
   {
     id: 'kpi_channel_profit',
@@ -275,6 +290,7 @@ export const INITIAL_KPIS = [
     unit: '%',
     owner: '전략파트너',
     color: 'amber',
+    autoComputed: false,
   },
 ]
 

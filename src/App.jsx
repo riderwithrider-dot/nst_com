@@ -703,14 +703,18 @@ function TeamHome({ user, weekKey, weekLabel, teamFeed, actionItems, kpis, canMa
   const filteredTeamFeed = subteamFilter === 'all'
     ? teamFeed
     : teamFeed.filter(member => member.subteam === subteamFilter)
-  const sharedTasks = filteredTeamFeed.flatMap(member => (member.items || []).map(task => ({
-    ...task,
-    memberUid: member.uid,
-    memberName: member.displayName,
-    memberPhotoURL: member.photoURL,
-    subteam: member.subteam,
-    subteamLabel: member.subteamLabel || getSubteamLabel(member.subteam),
-  })))
+  const sharedTasks = filteredTeamFeed.flatMap(member => (member.items || []).map(task => {
+    const isMine = member.uid === user.uid
+    const fallbackName = user?.displayName || user?.email || '이름 없음'
+    return {
+      ...task,
+      memberUid: member.uid,
+      memberName: member.displayName || (isMine ? fallbackName : '이름 없음'),
+      memberPhotoURL: member.photoURL || (isMine ? (user.photoURL || '') : ''),
+      subteam: member.subteam,
+      subteamLabel: member.subteamLabel || getSubteamLabel(member.subteam),
+    }
+  }))
   const doneTasks = sharedTasks.filter(task => task.status === 'done')
   const activeSharedTasks = sharedTasks.filter(task => task.status !== 'done')
   const blockedTasks = activeSharedTasks.filter(task => task.status === 'blocked')
@@ -1613,9 +1617,21 @@ function ProjectForm({ kpis, onCreate }) {
     subteam: 'commerce',
     dueDate: '',
     kpi: kpis[0]?.label || '',
+    kpiLinks: [],
   })
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+
+  function setKpiLink(kpiId, weightStr) {
+    setDraft(prev => {
+      const others = (prev.kpiLinks || []).filter(l => l.kpiId !== kpiId)
+      const w = Number(weightStr)
+      if (!weightStr || !Number.isFinite(w) || w <= 0) {
+        return { ...prev, kpiLinks: others }
+      }
+      return { ...prev, kpiLinks: [...others, { kpiId, weight: Math.min(100, w) }] }
+    })
+  }
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -1665,21 +1681,53 @@ function ProjectForm({ kpis, onCreate }) {
           {saving ? '저장 중' : '추가'}
         </button>
       </div>
+
+      <div className="kpi-link-row">
+        <span className="kpi-link-label">KPI 가중치(%)</span>
+        {kpis.map(kpi => {
+          const link = (draft.kpiLinks || []).find(l => l.kpiId === kpi.id)
+          const value = link?.weight ?? ''
+          return (
+            <label key={kpi.id} className="kpi-link-cell">
+              <span>{kpi.label}</span>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                placeholder="0"
+                value={value}
+                onChange={event => setKpiLink(kpi.id, event.target.value)}
+              />
+            </label>
+          )
+        })}
+      </div>
+
       {error && <div className="alert error slim">{error}</div>}
     </form>
   )
 }
 
 function TeamBoard({ user, weekKey, teamFeed, actionItems, kpis, canManage, memberProfile }) {
-  const [category, setCategory] = useState('all')
+  const [selectedCategories, setSelectedCategories] = useState(new Set())
   const [status, setStatus] = useState('all')
   const [subteamFilter, setSubteamFilter] = useState('all')
   const [inboxMode, setInboxMode] = useState('comments')
   const [selectedActionId, setSelectedActionId] = useState(null)
   const [showProjectForm, setShowProjectForm] = useState(false)
   const permissions = getMemberPermissions(memberProfile)
+
+  function toggleCategory(key) {
+    setSelectedCategories(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
   const filteredActionItems = actionItems.filter(item => {
-    const categoryMatch = category === 'all' || item.category === category
+    const categoryMatch = selectedCategories.size === 0 || selectedCategories.has(item.category)
     const statusMatch = status === 'all' || (item.status || (item.done ? 'done' : 'todo')) === status
     const itemSubteam = item.subteam || assigneeToSubteam(item.assignee)
     const subteamMatch = subteamFilter === 'all' || itemSubteam === subteamFilter
@@ -1688,17 +1736,21 @@ function TeamBoard({ user, weekKey, teamFeed, actionItems, kpis, canManage, memb
   const filteredTeamFeed = subteamFilter === 'all'
     ? teamFeed
     : teamFeed.filter(member => member.subteam === subteamFilter)
-  const sharedTasks = filteredTeamFeed.flatMap(member => (member.items || []).map(task => ({
-    ...task,
-    memberUid: member.uid,
-    memberName: member.displayName,
-    memberPhotoURL: member.photoURL,
-    subteam: member.subteam,
-    subteamLabel: member.subteamLabel || getSubteamLabel(member.subteam),
-  })))
+  const sharedTasks = filteredTeamFeed.flatMap(member => (member.items || []).map(task => {
+    const isMine = member.uid === user.uid
+    const fallbackName = user?.displayName || user?.email || '이름 없음'
+    return {
+      ...task,
+      memberUid: member.uid,
+      memberName: member.displayName || (isMine ? fallbackName : '이름 없음'),
+      memberPhotoURL: member.photoURL || (isMine ? (user.photoURL || '') : ''),
+      subteam: member.subteam,
+      subteamLabel: member.subteamLabel || getSubteamLabel(member.subteam),
+    }
+  }))
   const filteredSharedActionItems = sharedTasks
     .filter(task => {
-      const categoryMatch = category === 'all' || category === 'team'
+      const categoryMatch = selectedCategories.size === 0 || selectedCategories.has('team')
       const statusMatch = status === 'all' || task.status === status
       return categoryMatch && statusMatch
     })
@@ -1709,7 +1761,16 @@ function TeamBoard({ user, weekKey, teamFeed, actionItems, kpis, canManage, memb
       category: 'team',
       assignee: task.subteamLabel || getSubteamLabel(task.subteam),
     }))
+  const kpiOrderMap = new Map(kpis.map((k, i) => [k.label, k.sortOrder ?? (i + 1) * 10]))
   const actionPlanItems = [...filteredActionItems, ...filteredSharedActionItems]
+    .sort((a, b) => {
+      const kpiA = a.kpi || a.impact || ''
+      const kpiB = b.kpi || b.impact || ''
+      const orderA = kpiA ? (kpiOrderMap.get(kpiA) ?? 9999) : 99999
+      const orderB = kpiB ? (kpiOrderMap.get(kpiB) ?? 9999) : 99999
+      if (orderA !== orderB) return orderA - orderB
+      return (a.sortOrder || 0) - (b.sortOrder || 0)
+    })
   const activeSharedTasks = sharedTasks
     .filter(task => task.status !== 'done')
     .sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority) || dueSortValue(a.dueDate) - dueSortValue(b.dueDate))
@@ -1835,15 +1896,31 @@ function TeamBoard({ user, weekKey, teamFeed, actionItems, kpis, canManage, memb
             <ProjectForm
               kpis={kpis}
               onCreate={async item => {
-                await createActionItem(DEFAULT_TEAM_ID, item)
+                await createActionItem(DEFAULT_TEAM_ID, {
+                  ...item,
+                  ownerUid: user.uid,
+                  ownerName: getProfileName(user, memberProfile),
+                  ownerPhotoURL: user.photoURL || '',
+                })
                 setShowProjectForm(false)
               }}
             />
           )}
           <div className="filter-row">
-            {['all', ...Object.keys(CATEGORY_META)].map(key => (
-              <button key={key} className={category === key ? 'active' : ''} onClick={() => setCategory(key)}>
-                {key === 'all' ? '전체' : CATEGORY_META[key].label}
+            <button
+              key="all"
+              className={selectedCategories.size === 0 ? 'active' : ''}
+              onClick={() => setSelectedCategories(new Set())}
+            >
+              전체
+            </button>
+            {Object.keys(CATEGORY_META).map(key => (
+              <button
+                key={key}
+                className={selectedCategories.has(key) ? 'active' : ''}
+                onClick={() => toggleCategory(key)}
+              >
+                {CATEGORY_META[key].label}
               </button>
             ))}
           </div>
@@ -1855,28 +1932,39 @@ function TeamBoard({ user, weekKey, teamFeed, actionItems, kpis, canManage, memb
             ))}
           </div>
           <div className="item-list">
-            {actionPlanItems.map(item => (
-              <div className="action-with-detail" id={`action-item-${item.actionKey}`} key={item.actionKey}>
-                <ActionRow
-                  item={item}
-                  active={selectedAction?.actionKey === item.actionKey}
-                  onClick={() => setSelectedActionId(selectedAction?.actionKey === item.actionKey ? null : item.actionKey)}
-                  onStatusChange={(item.sourceType === 'shared' || canManage || permissions.canUpdateTeamProject) ? next => handleActionStatusChange(item, next) : null}
-                  kpis={kpis}
-                  onKpiChange={canManage ? next => handleActionKpiChange(item, next) : null}
-                />
-                {selectedAction?.actionKey === item.actionKey && (
-                  <ActionItemDetail
-                    item={selectedAction}
-                    user={user}
-                    canManage={canManage}
-                    onAddComment={(permissions.canComment || canManage) ? text => handleAddActionComment(selectedAction, text) : null}
-                    onReplyComment={(permissions.canReply || canManage) ? (commentId, text) => handleReplyActionComment(selectedAction, commentId, text) : null}
-                    onDeleteComment={commentId => handleDeleteActionComment(selectedAction, commentId)}
-                  />
-                )}
-              </div>
-            ))}
+            {actionPlanItems.map((item, idx) => {
+              const prev = idx > 0 ? actionPlanItems[idx - 1] : null
+              const currentKpi = item.kpi || item.impact || ''
+              const prevKpi = prev ? (prev.kpi || prev.impact || '') : null
+              const showHeader = idx === 0 || prevKpi !== currentKpi
+              return (
+                <div key={item.actionKey}>
+                  {showHeader && (
+                    <div className="kpi-group-header">{currentKpi || 'KPI 미연결'}</div>
+                  )}
+                  <div className="action-with-detail" id={`action-item-${item.actionKey}`}>
+                    <ActionRow
+                      item={item}
+                      active={selectedAction?.actionKey === item.actionKey}
+                      onClick={() => setSelectedActionId(selectedAction?.actionKey === item.actionKey ? null : item.actionKey)}
+                      onStatusChange={(item.sourceType === 'shared' || canManage || permissions.canUpdateTeamProject) ? next => handleActionStatusChange(item, next) : null}
+                      kpis={kpis}
+                      onKpiChange={canManage ? next => handleActionKpiChange(item, next) : null}
+                    />
+                    {selectedAction?.actionKey === item.actionKey && (
+                      <ActionItemDetail
+                        item={selectedAction}
+                        user={user}
+                        canManage={canManage}
+                        onAddComment={(permissions.canComment || canManage) ? text => handleAddActionComment(selectedAction, text) : null}
+                        onReplyComment={(permissions.canReply || canManage) ? (commentId, text) => handleReplyActionComment(selectedAction, commentId, text) : null}
+                        onDeleteComment={commentId => handleDeleteActionComment(selectedAction, commentId)}
+                      />
+                    )}
+                  </div>
+                </div>
+              )
+            })}
             {actionPlanItems.length === 0 && <EmptyText text="조건에 맞는 진행 프로젝트가 없습니다." />}
           </div>
         </Panel>
@@ -2309,23 +2397,38 @@ function TaskEditor({ task, user, permissions, onChange, onComplete, onDelete, e
   }
 
   return (
-    <article className={`task-editor ${task.status === 'done' ? 'done' : ''} ${expanded ? 'expanded' : ''}`}>
+    <article className={`task-editor status-${task.status} ${task.status === 'done' ? 'done' : ''} ${expanded ? 'expanded' : ''}`}>
       <div className="task-row" onClick={onToggleExpand} role="button" tabIndex={0} onKeyDown={event => event.key === 'Enter' && onToggleExpand()}>
         <div className="task-main">
         <span className={`status-dot ${STATUS_META[task.status]?.tone || 'gray'}`} />
         <div>
           <strong>{task.title}</strong>
+          {due !== null && due < 0 && task.status !== 'done' && (
+            <span className="delay-badge">지연</span>
+          )}
+          {(() => {
+            const displayName = task.ownerName || user?.displayName || user?.email || ''
+            const displayPhoto = task.ownerPhotoURL || user?.photoURL
+            if (!displayName) return null
+            return (
+              <span className="owner-chip" title={`작성자: ${displayName}`}>
+                {displayPhoto ? (
+                  <img src={displayPhoto} alt="" />
+                ) : (
+                  <span className="avatar">{displayName[0] || 'N'}</span>
+                )}
+                <span>{displayName}</span>
+              </span>
+            )
+          })()}
           {task.detail && <p>{task.detail}</p>}
           <div className="badge-row">
-            <Badge tone={STATUS_META[task.status]?.tone}>{STATUS_META[task.status]?.label || task.status}</Badge>
             <Badge tone={PRIORITY_META[task.priority]?.tone}>{PRIORITY_META[task.priority]?.label || task.priority}</Badge>
             {task.isFocus && <Badge tone="teal">우선순위</Badge>}
-            <Badge tone={due !== null && due < 0 && task.status !== 'done' ? 'red' : 'gray'}>{formatDue(task.dueDate)}</Badge>
             {task.impact && <Badge tone="green">{task.impact}</Badge>}
             {(task.progressLogs || []).length > 0 && <Badge tone="teal">진행 {(task.progressLogs || []).length}</Badge>}
-            <Badge tone={(task.comments || []).length > 0 ? 'blue' : 'gray'}>
-              코멘트 {(task.comments || []).length}
-            </Badge>
+            <span className="meta-due">{formatDue(task.dueDate)}</span>
+            <span className="meta-comments">코멘트 {(task.comments || []).length}</span>
           </div>
         </div>
       </div>
@@ -2436,21 +2539,36 @@ function ActionRow({ item, onStatusChange, onKpiChange, kpis = [], compact = fal
     onStatusChange(draftStatus)
   }
 
+  const isOverdue = daysUntil(item.dueDate) < 0 && currentStatus !== 'done'
   return (
-    <article className={`action-row ${compact ? 'compact' : ''} ${active ? 'active' : ''}`} onClick={onClick}>
+    <article className={`action-row status-${currentStatus} ${compact ? 'compact' : ''} ${active ? 'active' : ''}`} onClick={onClick}>
       <div>
+        {assigneeLabel && <div className="subteam-tag-top">{assigneeLabel}</div>}
         <div className="row-title">
           <strong>{item.title}</strong>
           <Badge tone={CATEGORY_META[item.category]?.tone}>{CATEGORY_META[item.category]?.label}</Badge>
+          {isOverdue && <span className="delay-badge">지연</span>}
+          {(item.ownerName || item.memberName) && (() => {
+            const displayName = item.ownerName || item.memberName
+            const displayPhoto = item.ownerPhotoURL || item.memberPhotoURL
+            return (
+              <span className="owner-chip" title={`작성자: ${displayName}`}>
+                {displayPhoto ? (
+                  <img src={displayPhoto} alt="" />
+                ) : (
+                  <span className="avatar">{displayName[0] || 'N'}</span>
+                )}
+                <span>{displayName}</span>
+              </span>
+            )
+          })()}
         </div>
         {!compact && <p>{item.detail}</p>}
         <div className="badge-row">
-          <Badge tone={STATUS_META[currentStatus]?.tone}>{STATUS_META[currentStatus]?.label}</Badge>
           <Badge tone={PRIORITY_META[item.priority]?.tone}>{PRIORITY_META[item.priority]?.label}</Badge>
-          <Badge tone="gray">{assigneeLabel}</Badge>
           {(item.kpi || item.impact) && <Badge tone="teal">{item.kpi || item.impact}</Badge>}
-          <Badge tone={daysUntil(item.dueDate) < 0 && currentStatus !== 'done' ? 'red' : 'gray'}>{formatDue(item.dueDate)}</Badge>
-          <Badge tone={(item.comments || []).length > 0 ? 'blue' : 'gray'}>코멘트 {(item.comments || []).length}</Badge>
+          <span className="meta-due">{formatDue(item.dueDate)}</span>
+          <span className="meta-comments">코멘트 {(item.comments || []).length}</span>
         </div>
       </div>
       {(onStatusChange || onKpiChange) && (

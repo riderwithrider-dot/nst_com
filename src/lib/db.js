@@ -491,6 +491,30 @@ export async function deleteActionItemComment(teamId, itemId, commentId) {
   }, { merge: true })
 }
 
+const KPI_STATUS_FACTOR = {
+  done: 1,
+  review: 0.8,
+  doing: 0.5,
+  todo: 0,
+  blocked: 0,
+}
+
+export function computeKpiProgressFromActions(kpiId, actionItems = []) {
+  let totalWeight = 0
+  let weightedProgress = 0
+  for (const item of actionItems) {
+    const link = (item.kpiLinks || []).find(l => l && l.kpiId === kpiId)
+    if (!link) continue
+    const weight = Number(link.weight) || 0
+    if (weight <= 0) continue
+    const factor = KPI_STATUS_FACTOR[item.status] ?? 0
+    totalWeight += weight
+    weightedProgress += weight * factor
+  }
+  if (totalWeight === 0) return null
+  return Math.round((weightedProgress / totalWeight) * 100)
+}
+
 export function subscribeKpis(teamId, callback) {
   assertDb()
   const kpiRef = collection(db, 'teams', teamId, 'kpis')
