@@ -1956,6 +1956,95 @@ textarea:focus {
   font-size: 12px;
 }
 
+/* Task relations editor (Step 2.8.A) */
+.task-relations {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.025);
+  border-radius: 8px;
+  border-left: 3px solid var(--teal);
+}
+
+.task-relations .comment-title {
+  margin-bottom: 10px;
+}
+
+.relation-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.relation-row:last-child {
+  margin-bottom: 0;
+}
+
+.relation-label {
+  flex: 0 0 90px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #6b7280;
+  padding-top: 6px;
+}
+
+.relation-chips {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.relation-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--surface-soft);
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+
+.relation-chip.parent {
+  background: rgba(20, 184, 166, 0.12);
+  color: #0d7a6e;
+  border-color: rgba(20, 184, 166, 0.3);
+}
+
+.relation-chip.sibling {
+  background: rgba(245, 158, 11, 0.12);
+  color: #92400e;
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.relation-chip button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 14px;
+  color: inherit;
+  opacity: 0.6;
+}
+
+.relation-chip button:hover {
+  opacity: 1;
+}
+
+.relation-add {
+  width: auto;
+  min-height: 30px;
+  min-width: 160px;
+  padding: 4px 8px;
+  font-size: 12px;
+  background: white;
+}
+
 .report-output {
   display: grid;
   gap: 14px;

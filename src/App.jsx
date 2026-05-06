@@ -1826,6 +1826,7 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel }) {
                 onDeleteComment={commentId => deleteTaskComment(task.id, commentId)}
                 user={user}
                 permissions={permissions}
+                allTasks={[...tasks, ...history.flatMap(w => w.items || [])]}
               />
             ))}
             {activeTasks.length === 0 && <EmptyText text="진행 중인 이번 주 업무가 없습니다." />}
@@ -2718,7 +2719,7 @@ function DailyReportHistory({ reports, openReportId, onToggle }) {
   )
 }
 
-function TaskEditor({ task, user, permissions, onChange, onComplete, onDelete, expanded, onToggleExpand, onAddComment, onAddProgress, onReplyComment, onDeleteComment }) {
+function TaskEditor({ task, user, permissions, onChange, onComplete, onDelete, expanded, onToggleExpand, onAddComment, onAddProgress, onReplyComment, onDeleteComment, allTasks = [] }) {
   const [progressDraft, setProgressDraft] = useState('')
   const [progressImages, setProgressImages] = useState([])
   const [progressSaving, setProgressSaving] = useState(false)
@@ -2824,6 +2825,8 @@ function TaskEditor({ task, user, permissions, onChange, onComplete, onDelete, e
       </div>
       {expanded && (
         <div className="comment-panel">
+          <TaskRelationsEditor task={task} allTasks={allTasks} onChange={onChange} />
+
           <div className="comment-title">
             <Clock size={16} />
             <strong>{task.title} 오늘 진행내용</strong>
@@ -2959,6 +2962,89 @@ function ActionRow({ item, onStatusChange, onKpiChange, kpis = [], compact = fal
         </div>
       )}
     </article>
+  )
+}
+
+function TaskRelationsEditor({ task, allTasks = [], onChange }) {
+  const parentIds = task.parentIds || []
+  const siblingIds = task.siblingIds || []
+
+  const available = allTasks.filter(t => t.id !== task.id)
+  const availableParents = available.filter(t => !parentIds.includes(t.id) && !siblingIds.includes(t.id))
+  const availableSiblings = available.filter(t => !siblingIds.includes(t.id) && !parentIds.includes(t.id))
+
+  function getTitle(id) {
+    return allTasks.find(t => t.id === id)?.title || '(삭제된 업무)'
+  }
+
+  function addParent(value) {
+    if (!value || parentIds.includes(value)) return
+    onChange({ parentIds: [...parentIds, value] })
+  }
+
+  function removeParent(id) {
+    onChange({ parentIds: parentIds.filter(x => x !== id) })
+  }
+
+  function addSibling(value) {
+    if (!value || siblingIds.includes(value)) return
+    onChange({ siblingIds: [...siblingIds, value] })
+  }
+
+  function removeSibling(id) {
+    onChange({ siblingIds: siblingIds.filter(x => x !== id) })
+  }
+
+  return (
+    <div className="task-relations">
+      <div className="comment-title">
+        <strong>업무 연결</strong>
+      </div>
+
+      <div className="relation-row">
+        <span className="relation-label">상위 (모태)</span>
+        <div className="relation-chips">
+          {parentIds.map(id => (
+            <span key={id} className="relation-chip parent">
+              {getTitle(id)}
+              <button type="button" onClick={() => removeParent(id)} aria-label="제거">×</button>
+            </span>
+          ))}
+          <select
+            className="relation-add"
+            value=""
+            onChange={event => { addParent(event.target.value); event.target.value = '' }}
+          >
+            <option value="">+ 상위 업무 추가</option>
+            {availableParents.map(t => (
+              <option key={t.id} value={t.id}>{t.title}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="relation-row">
+        <span className="relation-label">동위 (병행)</span>
+        <div className="relation-chips">
+          {siblingIds.map(id => (
+            <span key={id} className="relation-chip sibling">
+              {getTitle(id)}
+              <button type="button" onClick={() => removeSibling(id)} aria-label="제거">×</button>
+            </span>
+          ))}
+          <select
+            className="relation-add"
+            value=""
+            onChange={event => { addSibling(event.target.value); event.target.value = '' }}
+          >
+            <option value="">+ 동위 업무 추가</option>
+            {availableSiblings.map(t => (
+              <option key={t.id} value={t.id}>{t.title}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+    </div>
   )
 }
 
