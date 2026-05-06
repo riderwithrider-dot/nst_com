@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth'
 import {
   Activity,
@@ -83,6 +83,10 @@ import {
 import { daysUntil, formatDate, generateId, getWeekKey, weekKeyToLabel } from './lib/date'
 import { requestGemini } from './lib/ai'
 import FlowDemoBoard from './FlowDemoBoard'
+import TaskFlowPanel from './TaskFlowPanel'
+
+const MembersContext = createContext([])
+export { MembersContext }
 
 const VIEWS = [
   { id: 'home', label: '팀장 홈', icon: Home, managerOnly: true },
@@ -256,6 +260,7 @@ function Dashboard({ user, bootError }) {
   const [teamFeed, setTeamFeed] = useState([])
   const [actionItems, setActionItems] = useState([])
   const [kpis, setKpis] = useState([])
+  const [members, setMembers] = useState([])
   const [dataError, setDataError] = useState('')
   const weekKey = getWeekKey()
   const weekLabel = weekKeyToLabel(weekKey)
@@ -281,6 +286,7 @@ function Dashboard({ user, bootError }) {
         subscribeTeamFeed(DEFAULT_TEAM_ID, weekKey, setTeamFeed),
         subscribeActionItems(DEFAULT_TEAM_ID, setActionItems),
         subscribeKpis(DEFAULT_TEAM_ID, setKpis),
+        subscribeMembers(DEFAULT_TEAM_ID, setMembers),
       ]
       return () => unsubscribers.forEach(unsubscribe => unsubscribe())
     } catch (error) {
@@ -305,6 +311,7 @@ function Dashboard({ user, bootError }) {
   }
 
   return (
+    <MembersContext.Provider value={members}>
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand-row">
@@ -370,7 +377,7 @@ function Dashboard({ user, bootError }) {
           />
         )}
         {activeView === 'personal' && (
-          <PersonalBoard user={user} memberProfile={memberProfile} weekKey={weekKey} weekLabel={weekLabel} />
+          <PersonalBoard user={user} memberProfile={memberProfile} weekKey={weekKey} weekLabel={weekLabel} kpis={kpis} />
         )}
         {activeView === 'aiUsage' && (
           <AiUsageBoard user={user} memberProfile={memberProfile} weekKey={weekKey} />
@@ -403,6 +410,7 @@ function Dashboard({ user, bootError }) {
         )}
       </div>
     </div>
+    </MembersContext.Provider>
   )
 }
 
@@ -615,14 +623,21 @@ function AiUsageBoard({ user, memberProfile, weekKey }) {
   const [records, setRecords] = useState([])
   const [weekTasks, setWeekTasks] = useState([])
   const [teamFilter, setTeamFilter] = useState('all')
+  const [monthFilter, setMonthFilter] = useState('all')
+  const [selectedProjectKey, setSelectedProjectKey] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [logText, setLogText] = useState('')
   const [logFileName, setLogFileName] = useState('')
   const [draft, setDraft] = useState({
+    monthKey: getMonthKey(),
     subteam: memberProfile?.subteam || 'commerce',
     taskId: '',
+    projectName: '',
+    improvementTitle: '',
+    tags: '',
+    approvalStatus: '작성됨',
     aiTool: 'ChatGPT / Gemini / Claude',
     useCase: '',
     output: '',
@@ -640,8 +655,18 @@ function AiUsageBoard({ user, memberProfile, weekKey }) {
   useEffect(() => subscribeAiUsageRecords(DEFAULT_TEAM_ID, setRecords), [])
   useEffect(() => subscribeWeekTasks(DEFAULT_TEAM_ID, user.uid, weekKey, setWeekTasks), [user.uid, weekKey])
 
-  const visibleRecords = records.filter(record => teamFilter === 'all' || record.subteam === teamFilter)
+  const availableMonths = Array.from(new Set(records.map(record => getRecordMonthKey(record)).filter(Boolean))).sort().reverse()
+  const visibleRecords = records.filter(record => {
+    const matchesTeam = teamFilter === 'all' || record.subteam === teamFilter
+    const matchesMonth = monthFilter === 'all' || getRecordMonthKey(record) === monthFilter
+    return matchesTeam && matchesMonth
+  })
   const selectedTask = weekTasks.find(task => task.id === draft.taskId)
+  const projectSummaries = buildAiProjectSummaries(visibleRecords)
+  const activeProjectKey = selectedProjectKey && projectSummaries.some(project => project.key === selectedProjectKey)
+    ? selectedProjectKey
+    : projectSummaries[0]?.key || ''
+  const activeProject = projectSummaries.find(project => project.key === activeProjectKey)
   const calculatedTimeSavedHours = Math.max(0, ((toNumber(draft.baselineMinutes) - toNumber(draft.aiMinutes)) * Math.max(1, toNumber(draft.monthlyCount))) / 60)
   const calculatedLaborValueKrw = calculatedTimeSavedHours * toNumber(draft.hourlyRateUsd)
   const calculatedValueKrw = Math.round(calculatedLaborValueKrw + toNumber(draft.costAvoidedUsd) + toNumber(draft.revenueImpactUsd))
@@ -672,8 +697,13 @@ function AiUsageBoard({ user, memberProfile, weekKey }) {
 
     setDraft(prev => ({
       ...prev,
+      monthKey: parsed.monthKey || prev.monthKey || getMonthKey(),
       subteam: prev.subteam || memberProfile?.subteam || 'commerce',
       taskId: parsed.taskId || prev.taskId,
+      projectName: parsed.projectName || prev.projectName,
+      improvementTitle: parsed.improvementTitle || prev.improvementTitle,
+      tags: parsed.tags || prev.tags,
+      approvalStatus: parsed.approvalStatus || prev.approvalStatus || '작성됨',
       aiTool: parsed.aiTool || prev.aiTool,
       useCase: parsed.useCase || prev.useCase,
       output: parsed.output || prev.output,
@@ -710,11 +740,17 @@ function AiUsageBoard({ user, memberProfile, weekKey }) {
     setMessage('AI 업무 로그 MD 템플릿을 복사했습니다. 사용한 AI 대화나 작업 로그에 붙여넣어 기록하면 됩니다.')
   }
 
+  function copyAiPromptGuide() {
+    navigator.clipboard?.writeText(buildAiUsagePromptGuide())
+    setMessage('월별·부서별·프로젝트별·태그 기반 AI 활용 로그 프롬프트를 복사했습니다.')
+  }
+
   async function handleSubmit(event) {
     event.preventDefault()
     const form = event.currentTarget
-    if (!selectedTask || !draft.useCase.trim()) {
-      setError('내 업무에서 AI 활용 기록을 연결할 프로젝트와 AI 활용 내용을 선택/입력해주세요.')
+    const projectName = (draft.projectName || selectedTask?.title || '').trim()
+    if (!projectName || !draft.useCase.trim()) {
+      setError('대 프로젝트명과 AI 활용 내용을 입력해주세요. 내 업무에서 프로젝트를 선택하거나 직접 입력할 수 있습니다.')
       return
     }
 
@@ -729,13 +765,18 @@ function AiUsageBoard({ user, memberProfile, weekKey }) {
       const estimatedValueKrw = calculatedValueKrw
       await addAiUsageRecord(DEFAULT_TEAM_ID, {
         id: generateId(),
+        monthKey: draft.monthKey || getMonthKey(),
         subteam: draft.subteam,
         subteamLabel: getSubteamLabel(draft.subteam),
-        taskId: selectedTask.id,
-        taskTitle: selectedTask.title,
-        taskStatus: selectedTask.status,
-        taskPriority: selectedTask.priority,
-        taskImpact: selectedTask.impact || '',
+        taskId: selectedTask?.id || '',
+        taskTitle: selectedTask?.title || projectName,
+        taskStatus: selectedTask?.status || '',
+        taskPriority: selectedTask?.priority || '',
+        taskImpact: selectedTask?.impact || '',
+        projectName,
+        improvementTitle: (draft.improvementTitle || draft.output || draft.useCase).trim(),
+        tags: normalizeTags(draft.tags),
+        approvalStatus: draft.approvalStatus || '작성됨',
         aiTool: draft.aiTool.trim(),
         useCase: draft.useCase.trim(),
         output: draft.output.trim(),
@@ -766,8 +807,13 @@ function AiUsageBoard({ user, memberProfile, weekKey }) {
         createdAt: new Date().toISOString(),
       })
       setDraft({
+        monthKey: getMonthKey(),
         subteam: memberProfile?.subteam || 'commerce',
         taskId: '',
+        projectName: '',
+        improvementTitle: '',
+        tags: '',
+        approvalStatus: '작성됨',
         aiTool: 'ChatGPT / Gemini / Claude',
         useCase: '',
         output: '',
@@ -816,6 +862,10 @@ function AiUsageBoard({ user, memberProfile, weekKey }) {
             <MetricCard icon={BarChart3} label="추정 가치" value={formatKrw(totalValueKrw)} helper={`월 ${formatKrw(monthlyAiCostKrw)} 대비 ${roiRate}%`} tone="green" />
           </div>
           <div className="filter-row">
+            <select value={monthFilter} onChange={event => setMonthFilter(event.target.value)}>
+              <option value="all">전체 월</option>
+              {availableMonths.map(month => <option key={month} value={month}>{month}</option>)}
+            </select>
             <button className={teamFilter === 'all' ? 'active' : ''} onClick={() => setTeamFilter('all')}>전체</button>
             {SUBTEAMS.map(team => (
               <button key={team.id} className={teamFilter === team.id ? 'active' : ''} onClick={() => setTeamFilter(team.id)}>
@@ -831,6 +881,7 @@ function AiUsageBoard({ user, memberProfile, weekKey }) {
           {message && <div className="alert slim">{message}</div>}
           <form className="ai-usage-form" onSubmit={handleSubmit}>
             <div className="form-row">
+              <input type="month" value={draft.monthKey} onChange={event => updateDraft('monthKey', event.target.value)} />
               <select value={draft.subteam} onChange={event => updateDraft('subteam', event.target.value)}>
                 {SUBTEAMS.map(team => <option key={team.id} value={team.id}>{team.label}</option>)}
               </select>
@@ -843,6 +894,16 @@ function AiUsageBoard({ user, memberProfile, weekKey }) {
                 ))}
               </select>
             </div>
+            <div className="form-row">
+              <input value={draft.projectName} onChange={event => updateDraft('projectName', event.target.value)} placeholder="대 프로젝트 예: 홈쇼핑런칭, AI Agent 업무 자동화" />
+              <input value={draft.improvementTitle} onChange={event => updateDraft('improvementTitle', event.target.value)} placeholder="개선과제 예: 제안 메일 초안 자동화" />
+              <select value={draft.approvalStatus} onChange={event => updateDraft('approvalStatus', event.target.value)}>
+                <option value="작성됨">작성됨</option>
+                <option value="검토중">검토중</option>
+                <option value="승인완료">승인완료</option>
+              </select>
+            </div>
+            <input value={draft.tags} onChange={event => updateDraft('tags', event.target.value)} placeholder="태그 예: #문서작성 #보고 #자동화 #시간절감" />
             {weekTasks.length === 0 && <div className="alert slim">먼저 내 업무 탭에서 AI 활용을 기록할 업무를 추가해주세요.</div>}
             <div className="ai-log-import">
               <div>
@@ -854,7 +915,11 @@ function AiUsageBoard({ user, memberProfile, weekKey }) {
                 onChange={event => setLogText(event.target.value)}
                 placeholder={[
                   '# AI 업무 로그',
-                  '- 연결 업무: 현대홈쇼핑 신상품런칭',
+                  '- 기준월: 2026-05',
+                  '- 부서: 커머스',
+                  '- 대 프로젝트: 현대홈쇼핑 신상품런칭',
+                  '- 개선과제: 제안 메일 초안 자동화',
+                  '- 태그: #문서작성 #보고 #영업지원',
                   '- 사용 AI: ChatGPT',
                   '- 활용 내용: 방송 제안서 초안 작성',
                   '- 산출물: 제안 메일 초안, 상품 비교표',
@@ -867,6 +932,9 @@ function AiUsageBoard({ user, memberProfile, weekKey }) {
                 rows={6}
               />
               <div className="request-actions">
+                <button type="button" className="secondary-action" onClick={copyAiPromptGuide}>
+                  AI 프롬프트 복사하기
+                </button>
                 <label className="file-action">
                   로그 MD/TXT 첨부
                   <input type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" onChange={handleLogFileChange} />
@@ -926,38 +994,80 @@ function AiUsageBoard({ user, memberProfile, weekKey }) {
           </div>
         </Panel>
 
-        <Panel title="AI 활용 기록 리스트" icon={ListChecks}>
-          <div className="ai-usage-list">
-            {visibleRecords.map(record => (
-              <article className="ai-usage-card" key={record.id}>
-                <div className="note-head">
-                  <Badge tone="teal">{record.subteamLabel || getSubteamLabel(record.subteam)}</Badge>
-                  <span>{record.authorName || '작성자'} · {formatCommentTime(record.createdAt)}</span>
-                </div>
-                <h3>{record.taskTitle}</h3>
-                <p><strong>활용 방식</strong> {record.useCase}</p>
-                {record.output && <p><strong>산출물</strong> {record.output}</p>}
-                {record.impact && <p><strong>가치</strong> {record.impact}</p>}
-                <div className="ledger-grid">
-                  <span>툴: {record.aiTool || '미입력'}</span>
-                  <span>절감: {formatNumber(record.timeSavedHours)}h</span>
-                  <span>절감비용: {formatKrw(getRecordCostAvoidedKrw(record))}</span>
-                  <span>추정가치: {formatKrw(getRecordValueKrw(record))}</span>
-                </div>
-                {record.autoFilledFromLog && (
-                  <div className="log-source-chip">로그 기반 자동 기입{record.sourceLogFileName ? ` · ${record.sourceLogFileName}` : ''}</div>
-                )}
-                {record.calculationBasis && <p><strong>산정근거</strong> {record.calculationBasis}</p>}
-                {record.nextStep && <div className="executive-brief">{record.nextStep}</div>}
-                {(canManage || record.authorUid === user.uid) && (
-                  <button className="icon-button" onClick={() => handleDelete(record)} title="삭제">
-                    <Trash2 size={16} />
-                  </button>
-                )}
-              </article>
+        <Panel title="프로젝트별 AI 활용 기록" icon={ListChecks}>
+          <div className="ai-project-list">
+            {projectSummaries.map(project => (
+              <button
+                key={project.key}
+                type="button"
+                className={`ai-project-row ${activeProjectKey === project.key ? 'active' : ''}`}
+                onClick={() => setSelectedProjectKey(project.key)}
+              >
+                <span>
+                  <Badge tone="teal">{project.subteamLabel}</Badge>
+                  <strong>{project.projectName}</strong>
+                </span>
+                <small>{project.count}건 · {formatNumber(project.hours)}h · {formatKrw(project.value)}</small>
+              </button>
             ))}
-            {visibleRecords.length === 0 && <EmptyText text="아직 AI 활용 기록이 없습니다. AI로 진행한 업무와 만들어낸 가치를 기록해보세요." />}
+            {projectSummaries.length === 0 && <EmptyText text="아직 AI 활용 기록이 없습니다. AI로 진행한 업무와 만들어낸 가치를 기록해보세요." />}
           </div>
+
+          {activeProject && (
+            <div className="ai-project-detail">
+              <div className="project-detail-head">
+                <div>
+                  <span className="muted-text">{activeProject.months.join(', ')}</span>
+                  <h3>{activeProject.projectName}</h3>
+                </div>
+                <div className="ledger-grid">
+                  <span>로그 {activeProject.count}건</span>
+                  <span>절감 {formatNumber(activeProject.hours)}h</span>
+                  <span>추정가치 {formatKrw(activeProject.value)}</span>
+                </div>
+              </div>
+
+              <div className="tag-row">
+                {activeProject.tags.map(tag => <span key={tag}>{tag}</span>)}
+              </div>
+
+              <div className="improvement-list">
+                {activeProject.improvements.map(item => <span key={item}>{item}</span>)}
+              </div>
+
+              <div className="ai-usage-list compact">
+                {activeProject.records.map(record => (
+                  <details className="ai-usage-card compact" key={record.id}>
+                    <summary>
+                      <span>
+                        <strong>{record.improvementTitle || record.taskTitle}</strong>
+                        <small>{record.authorName || '작성자'} · {formatCommentTime(record.createdAt)} · {record.aiTool || '미입력'}</small>
+                      </span>
+                      <Badge tone="gray">{record.approvalStatus || '작성됨'}</Badge>
+                    </summary>
+                    <p><strong>활용</strong> {record.useCase}</p>
+                    {record.output && <p><strong>산출물</strong> {record.output}</p>}
+                    {record.impact && <p><strong>가치</strong> {record.impact}</p>}
+                    <div className="ledger-grid">
+                      <span>절감 {formatNumber(record.timeSavedHours)}h</span>
+                      <span>외주/리서치 {formatKrw(getRecordCostAvoidedKrw(record))}</span>
+                      <span>추정가치 {formatKrw(getRecordValueKrw(record))}</span>
+                    </div>
+                    {record.autoFilledFromLog && (
+                      <div className="log-source-chip">로그 기반 자동 기입{record.sourceLogFileName ? ` · ${record.sourceLogFileName}` : ''}</div>
+                    )}
+                    {record.calculationBasis && <p><strong>산정근거</strong> {record.calculationBasis}</p>}
+                    {record.nextStep && <div className="executive-brief">{record.nextStep}</div>}
+                    {(canManage || record.authorUid === user.uid) && (
+                      <button className="icon-button" onClick={() => handleDelete(record)} title="삭제">
+                        <Trash2 size={16} />
+                      </button>
+                    )}
+                  </details>
+                ))}
+              </div>
+            </div>
+          )}
         </Panel>
       </section>
     </main>
@@ -982,7 +1092,7 @@ function MemberAdminCard({ member, isCurrentUser, onUpdate }) {
       role: member.role || 'member',
       permissions: getMemberPermissions(member),
     })
-  }, [member])
+  }, [member.uid, member.displayName, member.subteam, member.title, member.role])
 
   async function handleSave(event) {
     event.preventDefault()
@@ -1407,7 +1517,7 @@ function SubteamFilter({ value, onChange }) {
   )
 }
 
-function PersonalBoard({ user, memberProfile, weekKey, weekLabel }) {
+function PersonalBoard({ user, memberProfile, weekKey, weekLabel, kpis = [] }) {
   const [tasks, setTasks] = useState([])
   const [history, setHistory] = useState([])
   const [draft, setDraft] = useState({
@@ -1826,7 +1936,14 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel }) {
                 onDeleteComment={commentId => deleteTaskComment(task.id, commentId)}
                 user={user}
                 permissions={permissions}
-                allTasks={[...tasks, ...history.flatMap(w => w.items || [])]}
+                allTasks={(() => {
+                  const seen = new Set()
+                  return [...tasks, ...history.flatMap(w => w.items || [])].filter(t => {
+                    if (!t || seen.has(t.id)) return false
+                    seen.add(t.id)
+                    return true
+                  })
+                })()}
               />
             ))}
             {activeTasks.length === 0 && <EmptyText text="진행 중인 이번 주 업무가 없습니다." />}
@@ -1847,7 +1964,10 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel }) {
         </Panel>
       </section>
 
-      <AINote user={user} weekKey={weekKey} weekLabel={weekLabel} completedTasks={completedTasks} />
+      <div className="view-stack">
+        <AINote user={user} weekKey={weekKey} weekLabel={weekLabel} completedTasks={completedTasks} />
+        <TaskFlowPanel tasks={tasks} history={history} kpis={kpis} onUpdateTask={updateTask} />
+      </div>
     </main>
   )
 }
@@ -2720,6 +2840,7 @@ function DailyReportHistory({ reports, openReportId, onToggle }) {
 }
 
 function TaskEditor({ task, user, permissions, onChange, onComplete, onDelete, expanded, onToggleExpand, onAddComment, onAddProgress, onReplyComment, onDeleteComment, allTasks = [] }) {
+  const members = useContext(MembersContext)
   const [progressDraft, setProgressDraft] = useState('')
   const [progressImages, setProgressImages] = useState([])
   const [progressSaving, setProgressSaving] = useState(false)
@@ -2774,8 +2895,9 @@ function TaskEditor({ task, user, permissions, onChange, onComplete, onDelete, e
             <span className="delay-badge">지연</span>
           )}
           {(() => {
-            const displayName = task.ownerName || user?.displayName || user?.email || ''
-            const displayPhoto = task.ownerPhotoURL || user?.photoURL
+            const owner = members.find(m => m.uid === task.ownerUid)
+            const displayName = owner?.displayName || task.ownerName || user?.displayName || user?.email || ''
+            const displayPhoto = owner?.photoURL || task.ownerPhotoURL || user?.photoURL
             if (!displayName) return null
             return (
               <span className="owner-chip" title={`작성자: ${displayName}`}>
@@ -2893,6 +3015,7 @@ function TaskEditor({ task, user, permissions, onChange, onComplete, onDelete, e
 }
 
 function ActionRow({ item, onStatusChange, onKpiChange, kpis = [], compact = false, active = false, onClick }) {
+  const members = useContext(MembersContext)
   const currentStatus = item.status || (item.done ? 'done' : 'todo')
   const [draftStatus, setDraftStatus] = useState(currentStatus)
   const assigneeLabel = item.subteam ? getSubteamLabel(item.subteam) : normalizeAssignee(item.assignee)
@@ -2917,9 +3040,12 @@ function ActionRow({ item, onStatusChange, onKpiChange, kpis = [], compact = fal
           <strong>{item.title}</strong>
           <Badge tone={CATEGORY_META[item.category]?.tone}>{CATEGORY_META[item.category]?.label}</Badge>
           {isOverdue && <span className="delay-badge">지연</span>}
-          {(item.ownerName || item.memberName) && (() => {
-            const displayName = item.ownerName || item.memberName
-            const displayPhoto = item.ownerPhotoURL || item.memberPhotoURL
+          {(() => {
+            const ownerUid = item.ownerUid || item.memberUid
+            const owner = ownerUid ? members.find(m => m.uid === ownerUid) : null
+            const displayName = owner?.displayName || item.ownerName || item.memberName
+            const displayPhoto = owner?.photoURL || item.ownerPhotoURL || item.memberPhotoURL
+            if (!displayName) return null
             return (
               <span className="owner-chip" title={`작성자: ${displayName}`}>
                 {displayPhoto ? (
@@ -2966,12 +3092,30 @@ function ActionRow({ item, onStatusChange, onKpiChange, kpis = [], compact = fal
 }
 
 function TaskRelationsEditor({ task, allTasks = [], onChange }) {
+  const [parentSearch, setParentSearch] = useState('')
   const parentIds = task.parentIds || []
   const siblingIds = task.siblingIds || []
 
   const available = allTasks.filter(t => t.id !== task.id)
-  const availableParents = available.filter(t => !parentIds.includes(t.id) && !siblingIds.includes(t.id))
-  const availableSiblings = available.filter(t => !siblingIds.includes(t.id) && !parentIds.includes(t.id))
+
+  // 이전 업무: 검색어 있으면 전체 기간에서, 없으면 1개월 이내만
+  const oneMonthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000
+  const searchLower = parentSearch.trim().toLowerCase()
+  const baseParentPool = searchLower
+    ? available.filter(t => (t.title || '').toLowerCase().includes(searchLower))
+    : available.filter(t => {
+        const ts = new Date(t.createdAt || t.updatedAt || 0).getTime()
+        return ts >= oneMonthAgo
+      })
+  const availableParents = baseParentPool.filter(t =>
+    !parentIds.includes(t.id) && !siblingIds.includes(t.id)
+  )
+
+  // 병행 업무: 진행 중인 task만 (완료 제외)
+  const activeTasks = available.filter(t => t.status !== 'done')
+  const availableSiblings = activeTasks.filter(t =>
+    !siblingIds.includes(t.id) && !parentIds.includes(t.id)
+  )
 
   function getTitle(id) {
     return allTasks.find(t => t.id === id)?.title || '(삭제된 업무)'
@@ -2980,6 +3124,7 @@ function TaskRelationsEditor({ task, allTasks = [], onChange }) {
   function addParent(value) {
     if (!value || parentIds.includes(value)) return
     onChange({ parentIds: [...parentIds, value] })
+    setParentSearch('')
   }
 
   function removeParent(id) {
@@ -3002,7 +3147,7 @@ function TaskRelationsEditor({ task, allTasks = [], onChange }) {
       </div>
 
       <div className="relation-row">
-        <span className="relation-label">상위 (모태)</span>
+        <span className="relation-label">이전 업무</span>
         <div className="relation-chips">
           {parentIds.map(id => (
             <span key={id} className="relation-chip parent">
@@ -3010,21 +3155,34 @@ function TaskRelationsEditor({ task, allTasks = [], onChange }) {
               <button type="button" onClick={() => removeParent(id)} aria-label="제거">×</button>
             </span>
           ))}
-          <select
-            className="relation-add"
-            value=""
-            onChange={event => { addParent(event.target.value); event.target.value = '' }}
-          >
-            <option value="">+ 상위 업무 추가</option>
-            {availableParents.map(t => (
-              <option key={t.id} value={t.id}>{t.title}</option>
-            ))}
-          </select>
+          <div className="relation-add-group">
+            <input
+              type="search"
+              className="relation-search"
+              placeholder="검색 (전체 기간)"
+              value={parentSearch}
+              onChange={event => setParentSearch(event.target.value)}
+            />
+            <select
+              className="relation-add"
+              value=""
+              onChange={event => { addParent(event.target.value); event.target.value = '' }}
+            >
+              <option value="">
+                {searchLower
+                  ? `+ 검색 결과 (${availableParents.length}건)`
+                  : `+ 최근 1개월 (${availableParents.length}건)`}
+              </option>
+              {availableParents.map(t => (
+                <option key={t.id} value={t.id}>{t.title}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
       <div className="relation-row">
-        <span className="relation-label">동위 (병행)</span>
+        <span className="relation-label">병행 업무</span>
         <div className="relation-chips">
           {siblingIds.map(id => (
             <span key={id} className="relation-chip sibling">
@@ -3037,7 +3195,7 @@ function TaskRelationsEditor({ task, allTasks = [], onChange }) {
             value=""
             onChange={event => { addSibling(event.target.value); event.target.value = '' }}
           >
-            <option value="">+ 동위 업무 추가</option>
+            <option value="">+ 진행 중 업무 ({availableSiblings.length}건)</option>
             {availableSiblings.map(t => (
               <option key={t.id} value={t.id}>{t.title}</option>
             ))}
@@ -3462,6 +3620,11 @@ function parseAiUsageLog(rawText, weekTasks = []) {
     || summarizeLogLines(text, ['다음', '후속', '반영', '공유', '검토'])
   const impact = pickLogSection(text, ['업무 가치', '가치', '효과', '성과', '기여'])
     || guessAiImpact(text, output)
+  const monthKey = normalizeMonthKey(pickLogSection(text, ['기준월', '월간 마일스톤', '월']))
+  const projectName = pickLogSection(text, ['대 프로젝트', '프로젝트', '연결 업무'])
+  const improvementTitle = pickLogSection(text, ['개선과제', '개선 사항', '로그 제목'])
+  const tags = normalizeTags(pickLogSection(text, ['태그', '라벨'])).join(' ')
+  const approvalStatus = pickLogSection(text, ['승인상태', '상태']) || '작성됨'
   const aiTool = guessAiTool(text)
   const baselineMinutes = parseDurationByKeywords(text, ['기존 소요시간', '기존', '원래', 'before', 'baseline'])
     || guessBaselineMinutes(text)
@@ -3474,6 +3637,11 @@ function parseAiUsageLog(rawText, weekTasks = []) {
   return {
     hasContent: true,
     taskId: matchedTask?.id || '',
+    monthKey,
+    projectName,
+    improvementTitle,
+    tags,
+    approvalStatus,
     aiTool,
     useCase,
     output,
@@ -3596,8 +3764,13 @@ function guessAiImpact(text, output) {
 
 function buildAiUsageLogTemplate(task) {
   return [
-    '# AI 업무 로그',
-    `- 연결 업무: ${task?.title || '내 업무 프로젝트명'}`,
+    '# 이 문서를 첨부하면 월별·부서별·프로젝트별·태그 기반 AI 활용 로그 데이터로 정리해줘',
+    '- 기준월: ',
+    '- 부서: ',
+    `- 대 프로젝트: ${task?.title || '내 업무 프로젝트명'}`,
+    '- 개선과제: ',
+    '- 태그: #문서작성 #보고 #시간절감',
+    '- 승인상태: 작성됨',
     '- 사용 AI: ChatGPT / Gemini / Claude',
     '- 활용 내용: ',
     '- 산출물: ',
@@ -3608,6 +3781,169 @@ function buildAiUsageLogTemplate(task) {
     '- 외주/리서치 대체비: 0원',
     '- 매출/기회가치: 0원',
     '- 다음 액션: ',
+  ].join('\n')
+}
+
+function buildAiUsagePromptGuide() {
+  return [
+    '# 이 문서를 첨부하면 월별·부서별·프로젝트별·태그 기반 AI 활용 로그 데이터로 정리해줘',
+    '',
+    '너는 NST BIO 마케팅본부의 AI 활용 기록 정리 담당자야.',
+    '',
+    '이 문서와 함께 첨부되거나 붙여넣어진 작업 원자료를 기준으로, 회사 주간업무 대시보드와 보고에 사용할 수 있는 AI 활용 로그 데이터를 Markdown 형식으로 작성해줘.',
+    '',
+    '가장 중요한 목적:',
+    '- 네가 출력한 Markdown 전체를 사용자가 주간업무 대시보드의 [AI 활용 기록] 탭 > [AI 업무 로그로 자동 채우기] 입력창에 그대로 복사해서 붙여넣을 수 있어야 해.',
+    '- 따라서 첫 번째 결과 블록은 반드시 아래의 [대시보드 붙여넣기용 AI 업무 로그] 형식으로 작성해.',
+    '- 필드명은 바꾸지 말고 그대로 사용해. 대시보드가 이 필드명을 기준으로 자동 분석해.',
+    '- 여러 업무가 있어도 대시보드에 1회 저장할 대표 로그 1건을 먼저 만들고, 월간 집계와 세부 로그는 그 아래에 참고용으로 붙여.',
+    '- 사용자가 바로 복사할 수 있도록 결과 앞뒤에 설명, 인사말, 안내 문장을 붙이지 마.',
+    '',
+    '중요:',
+    '- 마지막 작업 하나만 요약하지 말고, 원자료에 있는 오늘 작업 전체를 기준으로 정리해.',
+    '- 로그는 개별 업무 단위로 저장하되, 월별·부서별·프로젝트별·태그별로 집계할 수 있게 작성해.',
+    '- 부서는 실제 업무 부서를 사용해. 예: 커머스, 마케팅, DX',
+    '- 대 프로젝트는 업무의 큰 묶음으로 작성해. 예: 홈쇼핑런칭, 자사몰 개선, AI Agent 업무 자동화',
+    '- 개선과제는 프로젝트 안에서 실제로 개선된 세부 업무로 작성해.',
+    '- 태그는 검색과 분석이 가능하도록 2~5개만 작성해. 예: #문서작성 #리서치 #자동화 #보고 #개발 #영업지원 #시간절감',
+    '- 기존 소요시간과 AI 후 소요시간은 과장하지 말고 보수적으로 추정해.',
+    '- 외주/리서치 대체비와 매출/기회가치는 명확한 근거가 없으면 0원으로 둬.',
+    '- 산정근거는 반드시 계산식으로 작성해.',
+    '- 결과는 아래 형식만 출력하고, 별도 설명 문장은 붙이지 마.',
+    '',
+    '## 대시보드 붙여넣기용 AI 업무 로그',
+    '- 기준월:',
+    '- 부서:',
+    '- 대 프로젝트:',
+    '- 개선과제:',
+    '- 태그:',
+    '- 승인상태: 작성됨',
+    '- 사용 AI:',
+    '- 활용 내용:',
+    '- 산출물:',
+    '- 업무 가치:',
+    '- 기존 소요시간:  분',
+    '- AI 후 소요시간:  분',
+    '- 월 반복횟수: 1',
+    '- 외주/리서치 대체비: 0원',
+    '- 매출/기회가치: 0원',
+    '- 산정근거:',
+    '- 다음 액션:',
+    '',
+    '## AI 활용 로그 데이터',
+    '',
+    '### 월간 마일스톤',
+    '- 기준월:',
+    '- 월간 목표:',
+    '- 부서:',
+    '- 승인상태: 작성됨',
+    '',
+    '### 프로젝트 요약',
+    '- 부서:',
+    '- 대 프로젝트:',
+    '- 개선과제:',
+    '- 로그 제목:',
+    '- 사용 AI:',
+    '- 태그:',
+    '- 활용 요약:',
+    '- 산출물 요약:',
+    '- 업무 가치 요약:',
+    '- 기존 소요시간:  분',
+    '- AI 후 소요시간:  분',
+    '- 월 반복횟수: 1',
+    '- 절감시간:  h',
+    '- 외주/리서치 대체비: 0원',
+    '- 매출/기회가치: 0원',
+    '- 추정가치:  원',
+    '- 산정근거:',
+    '- 다음 액션:',
+    '',
+    '### 세부 로그',
+    '- 날짜:',
+    '- 작성자:',
+    '- 부서:',
+    '- 대 프로젝트:',
+    '- 개선과제:',
+    '- 로그 제목:',
+    '- 사용 AI:',
+    '- 태그:',
+    '- 활용 내용:',
+    '- 산출물:',
+    '- 업무 가치:',
+    '- 기존 소요시간:  분',
+    '- AI 후 소요시간:  분',
+    '- 월 반복횟수: 1',
+    '- 절감시간:  h',
+    '- 외주/리서치 대체비: 0원',
+    '- 매출/기회가치: 0원',
+    '- 추정가치:  원',
+    '- 산정근거:',
+    '- 승인상태: 작성됨',
+    '- 다음 액션:',
+    '',
+    '### 월간 집계',
+    '- 총 로그 수:',
+    '- 총 절감시간:  h',
+    '- 총 외주/리서치 대체비:  원',
+    '- 총 매출/기회가치:  원',
+    '- 총 추정가치:  원',
+    '- 주요 태그:',
+    '- 주요 산출물:',
+    '- CSO 보고 포인트:',
+    '',
+    '## 작성 기준',
+    '',
+    '가치 산정 방식:',
+    '',
+    '```txt',
+    '절감시간 = (기존 소요시간 - AI 후 소요시간) × 월 반복횟수 ÷ 60',
+    '시간가치 = 절감시간 × 40,000원',
+    '총 추정가치 = 시간가치 + 외주/리서치 대체비 + 매출/기회가치',
+    '```',
+    '',
+    '기본 시간당 기준가는 40,000원으로 계산해.',
+    '',
+    '## 원자료 입력 영역',
+    '',
+    '아래에 오늘 작업 메모, AI 대화 요약, 산출물 목록, 사용량 캡처 메모, 커밋 메시지, 보고 내용 등을 붙여넣어.',
+    '',
+    '---',
+    '',
+    '날짜:',
+    '작성자:',
+    '부서:',
+    '',
+    '오늘 사용한 AI:',
+    '-',
+    '',
+    '오늘 AI로 진행한 업무:',
+    '1.',
+    '2.',
+    '3.',
+    '',
+    '만든 산출물:',
+    '-',
+    '',
+    '수정/개선한 내용:',
+    '-',
+    '',
+    '업무에 도움이 된 점:',
+    '-',
+    '',
+    '대략적인 시간:',
+    '- AI 없이 했을 때 예상:',
+    '- AI 활용 후 실제:',
+    '',
+    '외주/리서치 대체비 근거:',
+    '-',
+    '',
+    '매출/기회가치 근거:',
+    '-',
+    '',
+    '다음 액션:',
+    '-',
+    '',
+    '---',
   ].join('\n')
 }
 
@@ -3698,6 +4034,78 @@ function getTodayKey(date = new Date()) {
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
+}
+
+function getMonthKey(date = new Date()) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  return `${year}-${month}`
+}
+
+function getRecordMonthKey(record) {
+  if (record?.monthKey) return record.monthKey
+  if (!record?.createdAt) return ''
+  const date = new Date(record.createdAt)
+  return Number.isNaN(date.getTime()) ? '' : getMonthKey(date)
+}
+
+function normalizeMonthKey(value) {
+  const text = String(value || '').trim()
+  const match = text.match(/(20\d{2})[-./년\s]*(\d{1,2})/)
+  if (!match) return ''
+  return `${match[1]}-${String(Number(match[2])).padStart(2, '0')}`
+}
+
+function normalizeTags(value) {
+  if (Array.isArray(value)) return value.map(tag => String(tag).trim()).filter(Boolean)
+  return String(value || '')
+    .split(/[\s,]+/)
+    .map(tag => tag.trim())
+    .filter(Boolean)
+    .map(tag => tag.startsWith('#') ? tag : `#${tag}`)
+    .slice(0, 5)
+}
+
+function buildAiProjectSummaries(records = []) {
+  const summaries = new Map()
+  records.forEach(record => {
+    const projectName = record.projectName || record.taskTitle || '프로젝트 미지정'
+    const key = `${record.subteam || 'team'}::${projectName}`
+    const current = summaries.get(key) || {
+      key,
+      subteam: record.subteam || '',
+      subteamLabel: record.subteamLabel || getSubteamLabel(record.subteam),
+      projectName,
+      count: 0,
+      hours: 0,
+      value: 0,
+      records: [],
+      tags: new Set(),
+      improvements: new Set(),
+      months: new Set(),
+    }
+    current.count += 1
+    current.hours += toNumber(record.timeSavedHours)
+    current.value += getRecordValueKrw(record)
+    current.records.push(record)
+    normalizeTags(record.tags).forEach(tag => current.tags.add(tag))
+    if (record.improvementTitle || record.taskTitle) {
+      current.improvements.add(record.improvementTitle || record.taskTitle)
+    }
+    const monthKey = getRecordMonthKey(record)
+    if (monthKey) current.months.add(monthKey)
+    summaries.set(key, current)
+  })
+
+  return Array.from(summaries.values())
+    .map(project => ({
+      ...project,
+      tags: Array.from(project.tags),
+      improvements: Array.from(project.improvements).slice(0, 6),
+      months: Array.from(project.months).sort().reverse(),
+      records: project.records.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)),
+    }))
+    .sort((a, b) => b.value - a.value)
 }
 
 function getTodayProgressLogs(tasks) {
