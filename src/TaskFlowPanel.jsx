@@ -4,10 +4,10 @@
 // - 사용자별 숨김 상태는 기존대로 task.hiddenInFlow 사용 (이번 주 업무 doc 안에 보관)
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, ArrowRight, ArrowUp, BookmarkPlus, ChevronDown, ChevronUp, ExternalLink, EyeOff, RotateCcw, Save, Trash2, X } from 'lucide-react'
+import { Activity, ArrowRight, ArrowUp, BookmarkPlus, ChevronDown, ChevronUp, ExternalLink, EyeOff, Plus, RotateCcw, Save, Trash2, X } from 'lucide-react'
 import mermaid from 'mermaid'
-import { STATUS_META, DEFAULT_TEAM_ID } from './lib/constants'
-import { deleteFlowSnapshot, saveFlowSnapshot, subscribeFlowSnapshots } from './lib/db'
+import { STATUS_META, SUBTEAMS, DEFAULT_TEAM_ID, getSubteamLabel } from './lib/constants'
+import { createKpi, deleteFlowSnapshot, saveFlowSnapshot, subscribeFlowSnapshots } from './lib/db'
 import { generateId } from './lib/date'
 
 mermaid.initialize({
@@ -18,11 +18,36 @@ mermaid.initialize({
   themeVariables: { fontFamily: 'inherit', fontSize: '13px' },
 })
 
-export default function TaskFlowPanel({ user, tasks = [], history = [], kpis = [], onUpdateTask, onDeleteTask }) {
+export default function TaskFlowPanel({ user, tasks = [], history = [], kpis = [], onUpdateTask, onUpdateTasksBatch, onDeleteTask }) {
   const [expanded, setExpanded] = useState(true)
   const [snapshots, setSnapshots] = useState([])
   const [activeSnapshotId, setActiveSnapshotId] = useState(null)
   const [snapshotError, setSnapshotError] = useState('')
+  const [snapshotInputName, setSnapshotInputName] = useState('')
+  // 접이식 게시글형 섹션 — 기본 모두 닫힘
+  const [openSection, setOpenSection] = useState(null) // 'hidden' | 'snapshots' | null
+  // 차트에 임시 핀(pin)한 KPI 라벨 (이번 주 task가 안 써도 차트에 표시)
+  const [pinnedKpiLabels, setPinnedKpiLabels] = useState(() => new Set())
+
+  function handlePinKpi(event) {
+    const label = event.target.value
+    if (!label) return
+    setPinnedKpiLabels(prev => {
+      const next = new Set(prev)
+      next.add(label)
+      return next
+    })
+    // select 자동 리셋
+    event.target.value = ''
+  }
+
+  function handleUnpinKpi(label) {
+    setPinnedKpiLabels(prev => {
+      const next = new Set(prev)
+      next.delete(label)
+      return next
+    })
+  }
 
   useEffect(() => {
     if (!user?.uid) return undefined
@@ -40,54 +65,88 @@ export default function TaskFlowPanel({ user, tasks = [], history = [], kpis = [
     return new Set(tasks.filter(t => t.hiddenInFlow).map(t => t.id))
   }, [activeSnapshot, tasks])
 
-  async function handleSaveSnapshot() {
+  // 입력 이름과 매칭되는 기존 스냅샷
+  const matchingSnapshot = useMemo(() => {
+    const trimmed = snapshotInputName.trim()
+    if (!trimmed) return null
+    return snapshots.find(s => s.name === trimmed) || null
+  }, [snapshotInputName, snapshots])
+
+  async function handleSaveSnapshotByName() {
     if (!user?.uid) {
       setSnapshotError('로그인 후 사용할 수 있습니다.')
       return
     }
-    const name = window.prompt('스냅샷 이름을 입력하세요 (예: 5월 보고용, 현대홈쇼핑 PT용)')
-    if (!name || !name.trim()) return
-    const id = generateId('snap')
+    const name = snapshotInputName.trim()
+    if (!name) {
+      setSnapshotError('스냅샷 이름을 입력하세요.')
+      return
+    }
     try {
       setSnapshotError('')
-      await saveFlowSnapshot(DEFAULT_TEAM_ID, user.uid, id, {
-        name: name.trim(),
-        // 현재 보이는 상태 그대로 저장: 숨김 처리된 task id들 + 활성 스냅샷이면 그 hidden 사용
-        hidden: Array.from(effectiveHiddenIds),
-      })
-      setActiveSnapshotId(id)
+      console.log('[스냅샷] 저장 시작:', { name, hiddenCount: effectiveHiddenIds.size, uid: user.uid })
+      if (matchingSnapshot) {
+        const ok = window.confirm(`"${name}" 스냅샷이 이미 있습니다. 현재 화면 상태로 덮어쓸까요?`)
+        if (!ok) return
+        await saveFlowSnapshot(DEFAULT_TEAM_ID, user.uid, matchingSnapshot.id, {
+          name,
+          hidden: Array.from(effectiveHiddenIds),
+        })
+        setActiveSnapshotId(matchingSnapshot.id)
+        console.log('[스냅샷] 덮어쓰기 완료:', name)
+      } else {
+        const id = generateId('snap')
+        await saveFlowSnapshot(DEFAULT_TEAM_ID, user.uid, id, {
+          name,
+          hidden: Array.from(effectiveHiddenIds),
+        })
+        setActiveSnapshotId(id)
+        console.log('[스냅샷] 새로 저장 완료:', { name, id })
+      }
+      // 저장 성공 → 스냅샷 관리 섹션 자동 펼치기
+      setOpenSection('snapshots')
+      window.alert(`스냅샷 "${name}" 저장 완료\n스냅샷 관리 섹션에서 확인할 수 있습니다.`)
     } catch (err) {
-      setSnapshotError(`스냅샷 저장 실패: ${err.message}\n  Firestore 규칙(flowSnapshots) 배포 여부를 확인하세요.`)
+      console.error('[스냅샷] 저장 실패:', err)
+      setSnapshotError(`스냅샷 저장 실패: ${err.message || err.code || '알 수 없는 오류'}\n  1) F12 콘솔의 상세 에러 확인\n  2) Firestore 규칙(flowSnapshots) 배포 여부 확인\n  3) 네트워크/로그인 상태 확인`)
     }
   }
 
-  async function handleOverwriteSnapshot() {
-    if (!activeSnapshot || !user?.uid) return
-    const ok = window.confirm(`"${activeSnapshot.name}" 스냅샷을 현재 화면 상태로 덮어쓸까요?`)
-    if (!ok) return
-    try {
-      setSnapshotError('')
-      await saveFlowSnapshot(DEFAULT_TEAM_ID, user.uid, activeSnapshot.id, {
-        name: activeSnapshot.name,
-        hidden: Array.from(effectiveHiddenIds),
-      })
-    } catch (err) {
-      setSnapshotError(`덮어쓰기 실패: ${err.message}`)
+  function handleLoadByName() {
+    if (matchingSnapshot) {
+      setActiveSnapshotId(matchingSnapshot.id)
     }
   }
 
-  async function handleDeleteSnapshot() {
-    if (!activeSnapshot || !user?.uid) return
-    const ok = window.confirm(`"${activeSnapshot.name}" 스냅샷을 삭제할까요?`)
+  function handleGoLive() {
+    setActiveSnapshotId(null)
+    setSnapshotInputName('')
+  }
+
+  async function handleDeleteSnapshotByName() {
+    if (!matchingSnapshot || !user?.uid) return
+    const ok = window.confirm(`"${matchingSnapshot.name}" 스냅샷을 삭제할까요?`)
     if (!ok) return
     try {
       setSnapshotError('')
-      await deleteFlowSnapshot(DEFAULT_TEAM_ID, user.uid, activeSnapshot.id)
-      setActiveSnapshotId(null)
+      await deleteFlowSnapshot(DEFAULT_TEAM_ID, user.uid, matchingSnapshot.id)
+      if (activeSnapshotId === matchingSnapshot.id) {
+        setActiveSnapshotId(null)
+      }
+      setSnapshotInputName('')
     } catch (err) {
       setSnapshotError(`스냅샷 삭제 실패: ${err.message}`)
     }
   }
+
+  // 활성 스냅샷이 바뀌면 입력란을 자동 동기화
+  useEffect(() => {
+    if (activeSnapshot) {
+      setSnapshotInputName(activeSnapshot.name)
+    } else {
+      setSnapshotInputName('')
+    }
+  }, [activeSnapshot])
 
   // 검색/조상 보강용 전체 task 풀 (이번 주 + 과거 history)
   const allTasks = useMemo(() => {
@@ -129,7 +188,16 @@ export default function TaskFlowPanel({ user, tasks = [], history = [], kpis = [
 
   const sortedTasks = useMemo(() => sortTasksByHierarchy(displayTasks), [displayTasks])
 
-  const chart = useMemo(() => buildChart(sortedTasks), [sortedTasks])
+  // 이번 주 활성 task ID 셋 — KPI 노드 추출 시 history 부모(extras) 제외용
+  const currentTaskIds = useMemo(
+    () => new Set(activeNonHidden.map(t => t.id)),
+    [activeNonHidden],
+  )
+
+  const chart = useMemo(
+    () => buildChart(sortedTasks, currentTaskIds, pinnedKpiLabels),
+    [sortedTasks, currentTaskIds, pinnedKpiLabels],
+  )
 
   // sanitizedId → 원래 taskId 매핑 (Mermaid가 ID를 sanitize 하므로)
   const idMap = useMemo(() => {
@@ -162,7 +230,7 @@ export default function TaskFlowPanel({ user, tasks = [], history = [], kpis = [
 
   function blockIfSnapshot() {
     if (activeSnapshot) {
-      window.alert('스냅샷 보기 중에는 편집할 수 없습니다.\n  라이브로 돌아간 후 다시 시도하세요 (스냅샷 영역의 "라이브로 돌아가기" 버튼).')
+      window.alert('스냅샷 보기 중에는 편집할 수 없습니다.\n  기존 업무흐름도로 돌아간 후 다시 시도하세요 (스냅샷 영역의 "기존 업무흐름도로 돌아가기" 버튼).')
       return true
     }
     return false
@@ -212,8 +280,39 @@ export default function TaskFlowPanel({ user, tasks = [], history = [], kpis = [
     onDeleteTask(taskId)
   }
 
+  // 히스토리 업무를 차트에서 제외 (이번 주 업무들의 parentIds/siblingIds에서 제거)
+  async function handleRemoveFromChart(historyTaskId) {
+    if (blockIfSnapshot()) return
+    const affected = tasks.filter(t =>
+      (t.parentIds || []).includes(historyTaskId) || (t.siblingIds || []).includes(historyTaskId),
+    )
+    if (affected.length === 0) {
+      window.alert('이 업무를 부모/병행으로 가진 이번 주 업무가 없습니다.')
+      return
+    }
+    const titles = affected.map(t => `· ${t.title}`).join('\n')
+    const ok = window.confirm(`다음 ${affected.length}개 이번 주 업무에서 이 업무 연결을 끊습니다 (히스토리 데이터는 보존):\n\n${titles}\n\n계속할까요?`)
+    if (!ok) return
+    const updates = affected.map(t => ({
+      taskId: t.id,
+      patch: {
+        parentIds: (t.parentIds || []).filter(id => id !== historyTaskId),
+        siblingIds: (t.siblingIds || []).filter(id => id !== historyTaskId),
+      },
+    }))
+    if (onUpdateTasksBatch) {
+      await onUpdateTasksBatch(updates)
+    } else if (onUpdateTask) {
+      // 폴백: batch 함수 없으면 순차 호출 (race 위험 있으나 fallback)
+      for (const u of updates) {
+        // eslint-disable-next-line no-await-in-loop
+        await onUpdateTask(u.taskId, u.patch)
+      }
+    }
+  }
+
   async function handleDeleteKpi(kpiLabel) {
-    if (!onUpdateTask || !kpiLabel) return
+    if (!kpiLabel) return
     if (blockIfSnapshot()) return
     const affected = tasks.filter(t => (t.kpi || t.impact) === kpiLabel)
     if (affected.length === 0) {
@@ -222,10 +321,36 @@ export default function TaskFlowPanel({ user, tasks = [], history = [], kpis = [
     }
     const ok = window.confirm(`KPI "${kpiLabel}"을(를) ${affected.length}개 업무에서 모두 제거할까요?\nKPI 정의 자체가 삭제되지는 않으며, 각 업무의 KPI 연결만 끊깁니다.`)
     if (!ok) return
-    for (const t of affected) {
-      // 순차 실행 — onUpdateTask가 tasks 배열 전체를 저장하는 구조라 병렬 시 race 발생
-      // eslint-disable-next-line no-await-in-loop
-      await onUpdateTask(t.id, { kpi: '', impact: '' })
+    const updates = affected.map(t => ({ taskId: t.id, patch: { kpi: '', impact: '' } }))
+    if (onUpdateTasksBatch) {
+      await onUpdateTasksBatch(updates)
+    } else if (onUpdateTask) {
+      for (const u of updates) {
+        // eslint-disable-next-line no-await-in-loop
+        await onUpdateTask(u.taskId, u.patch)
+      }
+    }
+  }
+
+  // 클릭한 KPI를 같은 부서의 다른 KPI로 변경 (해당 라벨을 쓰는 모든 이번 주 업무에 일괄 적용)
+  async function handleChangeKpi(oldLabel, newLabel) {
+    if (!oldLabel || !newLabel || oldLabel === newLabel) return
+    if (blockIfSnapshot()) return
+    const affected = tasks.filter(t => (t.kpi || t.impact) === oldLabel)
+    if (affected.length === 0) {
+      window.alert(`이번 주 업무 중 "${oldLabel}" 라벨을 가진 게 없어 변경할 대상이 없습니다.`)
+      return
+    }
+    const ok = window.confirm(`${affected.length}개 업무의 KPI를 "${oldLabel}" → "${newLabel}" 로 변경할까요?`)
+    if (!ok) return
+    const updates = affected.map(t => ({ taskId: t.id, patch: { kpi: newLabel, impact: newLabel } }))
+    if (onUpdateTasksBatch) {
+      await onUpdateTasksBatch(updates)
+    } else if (onUpdateTask) {
+      for (const u of updates) {
+        // eslint-disable-next-line no-await-in-loop
+        await onUpdateTask(u.taskId, u.patch)
+      }
     }
   }
 
@@ -237,6 +362,15 @@ export default function TaskFlowPanel({ user, tasks = [], history = [], kpis = [
           <h2>업무 흐름도</h2>
         </div>
         <div className="task-flow-actions">
+          <button
+            type="button"
+            className={`secondary-action mini ${kpiQuickOpen ? 'active' : ''}`}
+            onClick={() => setKpiQuickOpen(!kpiQuickOpen)}
+            title="KPI 추가 (이번 주 업무의 최상단 레이어로 표시됨)"
+          >
+            <Plus size={13} />
+            KPI
+          </button>
           {sortedTasks.length > 0 && (
             <button
               type="button"
@@ -259,6 +393,79 @@ export default function TaskFlowPanel({ user, tasks = [], history = [], kpis = [
         </div>
       </div>
 
+      {expanded && kpiQuickOpen && (
+        <div className="flow-kpi-quick-add">
+          <span className="flow-kpi-quick-label">차트에 KPI 추가</span>
+          <select
+            className="flow-kpi-pick-select"
+            value=""
+            onChange={handlePinKpi}
+          >
+            <option value="">팀장홈에서 등록한 KPI 선택…</option>
+            {(() => {
+              // 부서별로 그룹핑 + 이미 차트에 있는 것은 제외
+              const usedLabels = new Set([
+                ...tasks.map(t => (t.kpi || t.impact || '').trim()).filter(Boolean),
+                ...Array.from(pinnedKpiLabels),
+              ])
+              const available = kpis.filter(k => !usedLabels.has(k.label))
+              if (available.length === 0) {
+                return <option value="" disabled>모든 KPI가 이미 차트에 있습니다</option>
+              }
+              const groups = { mine: [], all: [], others: [] }
+              available.forEach(k => {
+                const sub = k.subteam || 'all'
+                if (sub === 'all') groups.all.push(k)
+                else groups.others.push(k) // 본인 부서 정보 없음 → 부서별
+              })
+              const blocks = []
+              if (groups.all.length > 0) {
+                blocks.push(
+                  <optgroup key="all" label="전사 공통">
+                    {groups.all.map(k => <option key={k.id} value={k.label}>{k.label}</option>)}
+                  </optgroup>,
+                )
+              }
+              const byTeam = {}
+              groups.others.forEach(k => {
+                const key = k.subteam || 'misc'
+                if (!byTeam[key]) byTeam[key] = []
+                byTeam[key].push(k)
+              })
+              Object.entries(byTeam).forEach(([sub, items]) => {
+                blocks.push(
+                  <optgroup key={sub} label={getSubteamLabel(sub) || '미분류'}>
+                    {items.map(k => <option key={k.id} value={k.label}>{k.label}</option>)}
+                  </optgroup>,
+                )
+              })
+              return blocks
+            })()}
+          </select>
+          <small className="flow-kpi-quick-hint">
+            팀장홈에서 등록된 KPI만 추가 가능 · 신규 KPI는 팀장홈 KPI 바에서 만들어주세요
+          </small>
+          {pinnedKpiLabels.size > 0 && (
+            <div className="flow-kpi-pinned-list">
+              <small>핀한 KPI:</small>
+              {Array.from(pinnedKpiLabels).map(label => (
+                <span key={label} className="flow-kpi-pinned-chip">
+                  {label}
+                  <button type="button" onClick={() => handleUnpinKpi(label)} aria-label="제거">×</button>
+                </span>
+              ))}
+            </div>
+          )}
+          <button
+            type="button"
+            className="ghost-action"
+            onClick={() => setKpiQuickOpen(false)}
+          >
+            닫기
+          </button>
+        </div>
+      )}
+
       {expanded && (
         sortedTasks.length === 0 ? (
           <p className="task-flow-empty">
@@ -272,91 +479,156 @@ export default function TaskFlowPanel({ user, tasks = [], history = [], kpis = [
             allTasks={allTasks}
             idMap={idMap}
             kpiMap={kpiMap}
+            kpis={kpis}
             onAddRelation={handleAddRelation}
             onHide={handleHide}
             onResetRelations={handleResetRelations}
             onDelete={onDeleteTask ? handleDelete : null}
-            onDeleteKpi={onUpdateTask ? handleDeleteKpi : null}
+            onDeleteKpi={(onUpdateTask || onUpdateTasksBatch) ? handleDeleteKpi : null}
+            onChangeKpi={(onUpdateTask || onUpdateTasksBatch) ? handleChangeKpi : null}
+            onRemoveFromChart={(onUpdateTask || onUpdateTasksBatch) ? handleRemoveFromChart : null}
           />
         )
       )}
 
-      {expanded && hiddenTasks.length > 0 && (
-        <div className="flow-hidden-list">
-          <strong>
-            {activeSnapshot ? `스냅샷 숨김 ${hiddenTasks.length}건 — 라이브 데이터에는 영향 없음` : `숨겨진 업무 (${hiddenTasks.length}건)`}
-          </strong>
-          <ul>
-            {hiddenTasks.map(t => (
-              <li key={t.id}>
-                <span>{t.title}</span>
-                {!activeSnapshot && (
-                  <button type="button" className="ghost-action" onClick={() => handleUnhide(t.id)}>
-                    다시 보기
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
+      {expanded && activeSnapshot && (
+        <div className="flow-snapshot-banner">
+          <span>스냅샷 보는 중: <strong>{activeSnapshot.name}</strong> · 변경은 원본 업무흐름도에 반영되지 않습니다</span>
+          <button type="button" className="ghost-action" onClick={handleGoLive}>
+            기존 업무흐름도로 돌아가기
+          </button>
         </div>
       )}
 
       {expanded && (
-        <div className="flow-snapshot-bar">
-          {snapshotError && <div className="alert error slim" style={{ whiteSpace: 'pre-wrap' }}>{snapshotError}</div>}
-          <div className="flow-snapshot-controls">
-            <label className="flow-snapshot-select-label">
-              <span>스냅샷</span>
-              <select
-                value={activeSnapshotId || ''}
-                onChange={event => setActiveSnapshotId(event.target.value || null)}
+        <div className="flow-collapsible-list">
+          {/* 스냅샷 관리 (게시글형 접이식) */}
+          <CollapsibleSection
+            title={`스냅샷 관리${snapshots.length > 0 ? ` (${snapshots.length}건 저장됨)` : ''}`}
+            isOpen={openSection === 'snapshots'}
+            onToggle={() => setOpenSection(openSection === 'snapshots' ? null : 'snapshots')}
+          >
+            {snapshotError && <div className="alert error slim" style={{ whiteSpace: 'pre-wrap' }}>{snapshotError}</div>}
+            <div className="flow-snapshot-input-row">
+              <input
+                type="text"
+                className="flow-snapshot-name-input"
+                list="flow-snapshots-datalist"
+                placeholder="스냅샷 이름 입력 (예: 5월 보고용, 현대홈쇼핑 PT용)"
+                value={snapshotInputName}
+                onChange={event => setSnapshotInputName(event.target.value)}
+                onKeyDown={event => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    handleSaveSnapshotByName()
+                  }
+                }}
+              />
+              <datalist id="flow-snapshots-datalist">
+                {snapshots.map(s => <option key={s.id} value={s.name} />)}
+              </datalist>
+            </div>
+            <div className="flow-snapshot-input-actions">
+              <button
+                type="button"
+                className="primary-action mini"
+                onClick={handleSaveSnapshotByName}
+                disabled={!snapshotInputName.trim()}
+                title={matchingSnapshot ? '같은 이름의 스냅샷 덮어쓰기' : '새 스냅샷으로 저장'}
               >
-                <option value="">— 라이브 (현재 데이터) —</option>
-                {snapshots.map(s => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-            </label>
-            {activeSnapshot && (
-              <>
+                <Save size={13} />
+                {matchingSnapshot ? '덮어쓰기' : '새로 저장'}
+              </button>
+              <button
+                type="button"
+                className="ghost-action"
+                onClick={handleLoadByName}
+                disabled={!matchingSnapshot || activeSnapshotId === matchingSnapshot.id}
+                title="이 이름의 스냅샷 불러오기"
+              >
+                불러오기
+              </button>
+              <button
+                type="button"
+                className="ghost-action danger"
+                onClick={handleDeleteSnapshotByName}
+                disabled={!matchingSnapshot}
+                title="이 이름의 스냅샷 삭제"
+              >
+                <Trash2 size={13} /> 삭제
+              </button>
+              {activeSnapshot && (
                 <button
                   type="button"
                   className="ghost-action"
-                  onClick={handleOverwriteSnapshot}
-                  title="현재 화면 상태로 이 스냅샷 덮어쓰기"
+                  onClick={handleGoLive}
+                  title="활성 스냅샷 해제하고 기존 업무흐름도로 돌아가기"
                 >
-                  <Save size={13} /> 덮어쓰기
+                  기존 흐름도로
                 </button>
-                <button
-                  type="button"
-                  className="ghost-action danger"
-                  onClick={handleDeleteSnapshot}
-                  title="이 스냅샷 삭제"
-                >
-                  <Trash2 size={13} /> 스냅샷 삭제
-                </button>
-              </>
-            )}
-            <button
-              type="button"
-              className="primary-action mini"
-              onClick={handleSaveSnapshot}
-              title="현재 화면 상태를 새 스냅샷으로 저장"
-            >
-              <BookmarkPlus size={13} /> 새 스냅샷 저장
-            </button>
-          </div>
-          {activeSnapshot && (
-            <div className="flow-snapshot-banner">
-              <span>스냅샷 보는 중: <strong>{activeSnapshot.name}</strong> · 변경은 라이브 데이터에 반영되지 않습니다</span>
-              <button type="button" className="ghost-action" onClick={() => setActiveSnapshotId(null)}>
-                라이브로 돌아가기
-              </button>
+              )}
             </div>
+            {snapshots.length > 0 && (
+              <ul className="flow-snapshot-quick-list">
+                {snapshots.map(s => (
+                  <li key={s.id}>
+                    <button
+                      type="button"
+                      className={s.id === activeSnapshotId ? 'active' : ''}
+                      onClick={() => { setSnapshotInputName(s.name); setActiveSnapshotId(s.id) }}
+                    >
+                      {s.name}
+                      <small>· {(s.hidden || []).length}개 숨김</small>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CollapsibleSection>
+
+          {/* 숨겨진 업무 (게시글형 접이식) */}
+          {hiddenTasks.length > 0 && (
+            <CollapsibleSection
+              title={activeSnapshot
+                ? `스냅샷 숨김 ${hiddenTasks.length}건 (원본 흐름도 영향 없음)`
+                : `숨겨진 업무 (${hiddenTasks.length}건)`}
+              isOpen={openSection === 'hidden'}
+              onToggle={() => setOpenSection(openSection === 'hidden' ? null : 'hidden')}
+            >
+              <ul className="flow-hidden-inline-list">
+                {hiddenTasks.map(t => (
+                  <li key={t.id}>
+                    <span>{t.title}</span>
+                    {!activeSnapshot && (
+                      <button type="button" className="ghost-action" onClick={() => handleUnhide(t.id)}>
+                        다시 보기
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </CollapsibleSection>
           )}
         </div>
       )}
     </section>
+  )
+}
+
+function CollapsibleSection({ title, isOpen, onToggle, children }) {
+  return (
+    <div className={`flow-collapsible ${isOpen ? 'open' : ''}`}>
+      <button
+        type="button"
+        className="flow-collapsible-head"
+        onClick={onToggle}
+        aria-expanded={isOpen}
+      >
+        <span>{title}</span>
+        {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+      </button>
+      {isOpen && <div className="flow-collapsible-body">{children}</div>}
+    </div>
   )
 }
 
@@ -367,11 +639,14 @@ function FlowMermaidInteractive({
   allTasks,
   idMap,
   kpiMap,
+  kpis,
   onAddRelation,
   onHide,
   onResetRelations,
   onDelete,
   onDeleteKpi,
+  onChangeKpi,
+  onRemoveFromChart,
 }) {
   const wrapRef = useRef(null)
   const [svg, setSvg] = useState('')
@@ -408,14 +683,26 @@ function FlowMermaidInteractive({
     const wrap = wrapRef.current
     if (!wrap) return
 
-    // 모든 노드(task + KPI)에 pointer 커서
+    // 모든 노드(task + KPI)에 pointer 커서, layer anchor는 숨김
     wrap.querySelectorAll('.node').forEach(node => {
       const sanitized = node.getAttribute('data-id') || extractIdFromMermaid(node.getAttribute('id') || '')
       if (!sanitized) return
+      if (sanitized === '__layer_anchor__') {
+        node.style.display = 'none'
+        return
+      }
       if (sanitized.startsWith('kpi_')) {
         if (kpiMap?.has(sanitized)) node.style.cursor = 'pointer'
       } else if (idMap.has(sanitized)) {
         node.style.cursor = 'pointer'
+      }
+    })
+
+    // layer anchor와 연결된 점선 엣지도 숨김
+    wrap.querySelectorAll('.edgePath, .edgePaths > path, .flowchart-link').forEach(edge => {
+      const id = edge.getAttribute('id') || ''
+      if (id.includes('__layer_anchor__')) {
+        edge.style.display = 'none'
       }
     })
 
@@ -425,6 +712,7 @@ function FlowMermaidInteractive({
       if (!node) return
       const sanitized = node.getAttribute('data-id') || extractIdFromMermaid(node.getAttribute('id') || '')
       if (!sanitized) return
+      if (sanitized === '__layer_anchor__') return
 
       const wrapRect = wrap.getBoundingClientRect()
       const nodeRect = node.getBoundingClientRect()
@@ -462,7 +750,12 @@ function FlowMermaidInteractive({
     }
   }, [svg, idMap, kpiMap])
 
-  const activeMenuTask = (menu && menu.kind === 'task') ? tasks.find(t => t.id === menu.taskId) : null
+  const activeMenuTask = (menu && menu.kind === 'task')
+    ? (tasks.find(t => t.id === menu.taskId) || displayTasks.find(t => t.id === menu.taskId))
+    : null
+  const isMenuHistoryItem = (menu && menu.kind === 'task' && activeMenuTask)
+    ? !tasks.some(t => t.id === menu.taskId)
+    : false
 
   if (error) {
     return <pre className="task-flow-error" style={{ whiteSpace: 'pre-wrap' }}>{error}</pre>
@@ -475,35 +768,90 @@ function FlowMermaidInteractive({
     <div className="task-flow-mermaid-wrap" ref={wrapRef}>
       <div className="task-flow-mermaid" dangerouslySetInnerHTML={{ __html: svg }} />
       {menu && menu.kind === 'task' && activeMenuTask && (
-        <NodeClickMenu
-          task={activeMenuTask}
-          tasks={tasks}
-          allTasks={allTasks}
-          x={menu.x}
-          y={menu.y}
-          onClose={() => setMenu(null)}
-          onHide={() => { onHide(menu.taskId); setMenu(null) }}
-          onReset={() => { onResetRelations(menu.taskId); setMenu(null) }}
-          onAddRelation={(kind, otherId) => { onAddRelation(menu.taskId, kind, otherId); setMenu(null) }}
-          onDelete={onDelete ? () => { onDelete(menu.taskId); setMenu(null) } : null}
-        />
+        isMenuHistoryItem ? (
+          <HistoryClickMenu
+            task={activeMenuTask}
+            x={menu.x}
+            y={menu.y}
+            onClose={() => setMenu(null)}
+            onRemoveFromChart={onRemoveFromChart ? () => { onRemoveFromChart(menu.taskId); setMenu(null) } : null}
+          />
+        ) : (
+          <NodeClickMenu
+            task={activeMenuTask}
+            tasks={tasks}
+            allTasks={allTasks}
+            x={menu.x}
+            y={menu.y}
+            onClose={() => setMenu(null)}
+            onHide={() => { onHide(menu.taskId); setMenu(null) }}
+            onReset={() => { onResetRelations(menu.taskId); setMenu(null) }}
+            onAddRelation={(kind, otherId) => { onAddRelation(menu.taskId, kind, otherId); setMenu(null) }}
+            onDelete={onDelete ? () => { onDelete(menu.taskId); setMenu(null) } : null}
+          />
+        )
       )}
       {menu && menu.kind === 'kpi' && (
         <KpiClickMenu
           kpiLabel={menu.kpiLabel}
+          kpis={kpis}
           tasks={tasks}
           x={menu.x}
           y={menu.y}
           onClose={() => setMenu(null)}
           onDelete={onDeleteKpi ? () => { onDeleteKpi(menu.kpiLabel); setMenu(null) } : null}
+          onChangeKpi={onChangeKpi ? newLabel => { onChangeKpi(menu.kpiLabel, newLabel); setMenu(null) } : null}
         />
       )}
     </div>
   )
 }
 
-function KpiClickMenu({ kpiLabel, tasks, x, y, onClose, onDelete }) {
+function HistoryClickMenu({ task, x, y, onClose, onRemoveFromChart }) {
+  return (
+    <div
+      className="flow-node-menu"
+      style={{ left: `${x}px`, top: `${y}px` }}
+      onClick={event => event.stopPropagation()}
+    >
+      <div className="flow-node-menu-head">
+        <strong title={task.title}>{task.title}</strong>
+        <button type="button" className="icon-button subtle" onClick={onClose} title="닫기">
+          <X size={14} />
+        </button>
+      </div>
+      <div className="flow-node-menu-meta">
+        완료업무 히스토리 항목 — 차트에 보이는 이유는 이번 주 업무의 부모/병행으로 연결되어 있기 때문
+      </div>
+      <div className="flow-node-menu-actions">
+        {onRemoveFromChart && (
+          <button
+            type="button"
+            className="ghost-action danger"
+            onClick={onRemoveFromChart}
+            title="이번 주 업무에서 이 항목을 부모/병행으로 가진 모든 연결을 끊음 (히스토리 데이터는 보존)"
+          >
+            <Trash2 size={13} /> 차트에서 제외
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function KpiClickMenu({ kpiLabel, kpis = [], tasks, x, y, onClose, onDelete, onChangeKpi }) {
   const linkedTasks = tasks.filter(t => (t.kpi || t.impact) === kpiLabel)
+  // 클릭한 KPI의 부서 찾기 (kpis 컬렉션에서 매칭)
+  const currentKpiDef = kpis.find(k => k.label === kpiLabel)
+  const currentSubteam = currentKpiDef?.subteam || ''
+  // 같은 부서의 다른 KPI 후보 (전사 공통 항상 포함)
+  const sameSubteamCandidates = kpis.filter(k =>
+    k.label !== kpiLabel && (k.subteam === currentSubteam || k.subteam === '' || !k.subteam),
+  )
+  const subteamLabel = currentKpiDef
+    ? (currentSubteam ? `부서: ${getSubteamLabel(currentSubteam)}` : '전사 공통')
+    : '미등록 KPI'
+
   return (
     <div
       className="flow-node-menu"
@@ -517,7 +865,7 @@ function KpiClickMenu({ kpiLabel, tasks, x, y, onClose, onDelete }) {
         </button>
       </div>
       <div className="flow-node-menu-meta">
-        KPI · 연결된 이번 주 업무 {linkedTasks.length}개
+        {subteamLabel} · 연결된 이번 주 업무 {linkedTasks.length}개
       </div>
       {linkedTasks.length > 0 && (
         <ul className="flow-node-menu-linked">
@@ -526,6 +874,31 @@ function KpiClickMenu({ kpiLabel, tasks, x, y, onClose, onDelete }) {
           ))}
         </ul>
       )}
+
+      {/* KPI 변경 드롭다운 — 같은 부서의 다른 KPI로 일괄 변경 */}
+      {onChangeKpi && (
+        <div className="flow-node-menu-row">
+          <span className="flow-node-menu-label">KPI 변경</span>
+          <select
+            disabled={sameSubteamCandidates.length === 0}
+            value=""
+            onChange={event => { const v = event.target.value; if (v) onChangeKpi(v) }}
+          >
+            <option value="">
+              {sameSubteamCandidates.length === 0
+                ? '같은 부서 다른 KPI 없음'
+                : `다른 KPI 선택 (${sameSubteamCandidates.length}건)`}
+            </option>
+            {sameSubteamCandidates.map(k => (
+              <option key={k.id} value={k.label}>
+                {k.label}
+                {k.subteam !== currentSubteam ? ' (전사)' : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       <div className="flow-node-menu-actions">
         {onDelete && (
           <button
@@ -715,23 +1088,29 @@ function indent(title, depth) {
   return `${'　'.repeat(depth - 1)}└ ${title}`
 }
 
-function buildChart(tasks) {
-  if (tasks.length === 0) {
+function buildChart(tasks, currentTaskIds = null, pinnedKpiLabels = null) {
+  if (tasks.length === 0 && (!pinnedKpiLabels || pinnedKpiLabels.size === 0)) {
     return 'graph TD\n  empty["연결된 업무가 없습니다"]'
   }
 
   const taskIds = new Set(tasks.map(t => t.id))
+  // currentTaskIds 안 주어지면 모든 task를 "현재"로 간주 (이전 호환)
+  const isCurrent = id => (currentTaskIds ? currentTaskIds.has(id) : true)
   const lines = ['graph TD']
 
-  // KPI 가상 노드
+  // KPI 가상 노드 — 이번 주 활성 task의 KPI만 (history 부모는 제외) + 핀한 KPI
   const kpiLabels = new Set()
   tasks.forEach(t => {
+    if (!isCurrent(t.id)) return
     const label = (t.kpi || t.impact || '').trim()
     if (label) kpiLabels.add(label)
   })
+  if (pinnedKpiLabels) {
+    pinnedKpiLabels.forEach(label => kpiLabels.add(label))
+  }
   const kpiId = label => 'kpi_' + sanitizeId(label)
 
-  // 부모 화살표
+  // 부모 화살표 (모든 표시 task — extras 포함)
   tasks.forEach(t => {
     ;(t.parentIds || []).forEach(pid => {
       if (taskIds.has(pid)) {
@@ -740,14 +1119,38 @@ function buildChart(tasks) {
     })
   })
 
-  // KPI → root task 화살표 (부모가 표시 트리 안에 없는 task에만)
+  // KPI → root task 화살표 — 이번 주 활성 task 중 부모가 트리 안에 없는 것만
   tasks.forEach(t => {
+    if (!isCurrent(t.id)) return
     const label = (t.kpi || t.impact || '').trim()
     if (!label) return
     const hasParentInTree = (t.parentIds || []).some(pid => taskIds.has(pid))
     if (hasParentInTree) return
     lines.push(`  ${kpiId(label)} ==> ${sanitizeId(t.id)}`)
   })
+
+  // KPI를 최상단 레이어에 강제로 배치 — KPI 없는 root task가 KPI보다 위로 올라가지 않게
+  // KPI가 있을 때만 이런 처리 (없으면 일반 layout)
+  if (kpiLabels.size > 0) {
+    // KPI 라벨 없는 이번 주 root task를 가상 KPI에 약하게 연결 → KPI들과 같은 row로 정렬되되
+    // 실제 화살표는 안 보이도록 invisible style
+    const orphanRoots = []
+    tasks.forEach(t => {
+      if (!isCurrent(t.id)) return
+      const label = (t.kpi || t.impact || '').trim()
+      if (label) return
+      const hasParentInTree = (t.parentIds || []).some(pid => taskIds.has(pid))
+      if (hasParentInTree) return
+      orphanRoots.push(t)
+    })
+    if (orphanRoots.length > 0) {
+      // 가상 anchor 노드 (보이지 않는 더미) 만들고 orphan root 위에 두기
+      lines.push('  __layer_anchor__[" "]:::layerAnchor')
+      orphanRoots.forEach(t => {
+        lines.push(`  __layer_anchor__ -.- ${sanitizeId(t.id)}`)
+      })
+    }
+  }
 
   // 병행(siblings) — 점선
   const siblingPairs = new Set()
@@ -783,6 +1186,7 @@ function buildChart(tasks) {
   lines.push('  classDef todo fill:#9ca3af,stroke:#6b7280,color:white')
   lines.push('  classDef review fill:#f59e0b,stroke:#d97706,color:white,font-weight:bold')
   lines.push('  classDef blocked fill:#ef4444,stroke:#dc2626,color:white,font-weight:bold')
+  lines.push('  classDef layerAnchor fill:transparent,stroke:transparent,color:transparent')
 
   return lines.join('\n')
 }

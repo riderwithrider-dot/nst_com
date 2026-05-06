@@ -961,6 +961,168 @@ textarea:focus {
   margin-bottom: 12px;
 }
 
+/* 간소화된 KPI 추가 폼: [추가] [부서] [KPI명] [세부 설명] */
+.kpi-create-form.compact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap; /* 좁은 화면에서 자연스럽게 줄바꿈 */
+}
+
+.kpi-create-form.compact > * {
+  min-width: 0; /* flex item이 content 크기 이하로 축소 가능하게 */
+}
+
+.kpi-create-form.compact .kpi-add-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.kpi-create-form.compact .kpi-create-subteam {
+  flex: 0 0 110px;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 13px;
+  background: white;
+}
+
+.kpi-create-form.compact .kpi-create-label {
+  flex: 1 1 140px;
+  max-width: 220px;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.kpi-create-form.compact .kpi-create-description {
+  flex: 2 1 220px;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.kpi-create-form.compact input:focus,
+.kpi-create-form.compact select:focus {
+  outline: none;
+  border-color: rgba(20, 184, 166, 0.6);
+  box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.15);
+}
+
+.kpi-create-form.compact .kpi-add-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* KPI 그룹 표시 */
+.kpi-grouped {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.kpi-group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted, #6b7280);
+}
+
+.kpi-group-title small {
+  font-size: 11px;
+  font-weight: 400;
+  color: #9ca3af;
+}
+
+.kpi-group-tag,
+.kpi-subteam-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.06);
+  color: #374151;
+}
+
+.kpi-subteam-tag.subteam-commerce,
+.kpi-group-tag.subteam-commerce {
+  background: rgba(59, 130, 246, 0.12);
+  color: #1e40af;
+}
+
+.kpi-subteam-tag.subteam-retail,
+.kpi-group-tag.subteam-retail {
+  background: rgba(245, 158, 11, 0.15);
+  color: #92400e;
+}
+
+.kpi-subteam-tag.subteam-strategy_partner,
+.kpi-group-tag.subteam-strategy_partner {
+  background: rgba(20, 184, 166, 0.15);
+  color: #0d7a6e;
+}
+
+.kpi-subteam-tag.subteam-all,
+.kpi-group-tag.subteam-all {
+  background: rgba(139, 92, 246, 0.12);
+  color: #5b21b6;
+}
+
+.kpi-card-meta {
+  margin-top: 2px;
+  margin-bottom: 4px;
+}
+
+/* KpiCard 헤더 (라벨 + 삭제 버튼) */
+.kpi-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.kpi-card-label {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text);
+  flex: 1;
+  line-height: 1.3;
+}
+
+.kpi-card-delete {
+  flex: 0 0 auto;
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+
+.kpi-card:hover .kpi-card-delete {
+  opacity: 1;
+}
+
+.kpi-card-description {
+  font-size: 11px;
+  color: var(--muted, #6b7280);
+  line-height: 1.4;
+  margin: 4px 0 6px;
+}
+
+.kpi-count-empty {
+  font-weight: 400;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
 .filter-row {
   display: flex;
   flex-wrap: wrap;
@@ -3315,6 +3477,475 @@ textarea:focus {
 
 .flow-snapshot-banner strong {
   font-weight: 700;
+}
+
+/* 흐름도 헤더 우측 KPI 빠른 추가 폼 */
+.task-flow-actions .secondary-action.mini.active {
+  background: rgba(20, 184, 166, 0.15);
+  border-color: rgba(20, 184, 166, 0.5);
+  color: #0d7a6e;
+}
+
+.flow-kpi-quick-add {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 14px;
+  padding: 10px 12px;
+  background: rgba(20, 184, 166, 0.06);
+  border: 1px solid rgba(20, 184, 166, 0.25);
+  border-radius: 8px;
+}
+
+.flow-kpi-quick-add > * {
+  min-width: 0;
+}
+
+.flow-kpi-quick-add select {
+  flex: 0 0 110px;
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+}
+
+.flow-kpi-quick-add input {
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 13px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+}
+
+.flow-kpi-quick-add input:nth-of-type(1) {
+  flex: 1 1 140px;
+  max-width: 220px;
+}
+
+.flow-kpi-quick-add input:nth-of-type(2) {
+  flex: 2 1 220px;
+}
+
+.flow-kpi-quick-add input:focus,
+.flow-kpi-quick-add select:focus {
+  outline: none;
+  border-color: rgba(20, 184, 166, 0.6);
+  box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.15);
+}
+
+.flow-kpi-quick-add .primary-action.mini {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  font-size: 12px;
+  background: var(--teal, #14b8a6);
+  border: 1px solid var(--teal, #14b8a6);
+  color: white;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.flow-kpi-quick-add .primary-action.mini:hover:not(:disabled) {
+  background: #0d9488;
+}
+
+.flow-kpi-quick-add .primary-action.mini:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.flow-kpi-quick-add .ghost-action {
+  padding: 5px 12px;
+  font-size: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+  color: #6b7280;
+}
+
+.flow-kpi-quick-add .ghost-action:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.flow-kpi-quick-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #0d7a6e;
+  white-space: nowrap;
+}
+
+.flow-kpi-pick-select {
+  flex: 1 1 240px;
+  min-height: 32px;
+  padding: 5px 10px;
+  font-size: 13px;
+  border: 1px solid rgba(20, 184, 166, 0.4);
+  border-radius: 6px;
+  background: white;
+}
+
+.flow-kpi-quick-hint {
+  flex: 1 0 100%;
+  font-size: 11px;
+  color: #6b7280;
+  margin: 2px 0 0;
+}
+
+.flow-kpi-pinned-list {
+  flex: 1 0 100%;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(20, 184, 166, 0.3);
+}
+
+.flow-kpi-pinned-list small {
+  font-size: 11px;
+  color: #6b7280;
+  margin-right: 4px;
+}
+
+.flow-kpi-pinned-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 10px;
+  font-size: 12px;
+  background: rgba(20, 184, 166, 0.12);
+  border: 1px solid rgba(20, 184, 166, 0.35);
+  color: #0d7a6e;
+  border-radius: 999px;
+}
+
+.flow-kpi-pinned-chip button {
+  background: rgba(0, 0, 0, 0.06);
+  border: none;
+  border-radius: 999px;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 12px;
+  color: inherit;
+}
+
+.flow-kpi-pinned-chip button:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #b91c1c;
+}
+
+/* 게시글형 접이식 섹션 */
+.flow-collapsible-list {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.flow-collapsible {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  overflow: hidden;
+}
+
+.flow-collapsible.open {
+  border-color: rgba(20, 184, 166, 0.4);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.flow-collapsible-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.02);
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2937;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.flow-collapsible-head:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.flow-collapsible.open .flow-collapsible-head {
+  background: rgba(20, 184, 166, 0.06);
+  color: #0d7a6e;
+}
+
+.flow-collapsible-body {
+  padding: 12px 14px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 스냅샷 입력 (콤보박스 + 액션 버튼) */
+.flow-snapshot-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.flow-snapshot-name-input {
+  flex: 1;
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 13px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+}
+
+.flow-snapshot-name-input:focus {
+  outline: none;
+  border-color: rgba(20, 184, 166, 0.6);
+  box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.15);
+}
+
+.flow-snapshot-input-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.flow-snapshot-input-actions .primary-action,
+.flow-snapshot-input-actions .ghost-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.flow-snapshot-input-actions .primary-action.mini {
+  background: var(--teal, #14b8a6);
+  border: 1px solid var(--teal, #14b8a6);
+  color: white;
+  font-weight: 600;
+}
+
+.flow-snapshot-input-actions .primary-action.mini:hover:not(:disabled) {
+  background: #0d9488;
+  border-color: #0d9488;
+}
+
+.flow-snapshot-input-actions .ghost-action {
+  border: 1px solid var(--line);
+  background: white;
+  color: #374151;
+}
+
+.flow-snapshot-input-actions .ghost-action:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.flow-snapshot-input-actions .ghost-action.danger {
+  color: #b91c1c;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.flow-snapshot-input-actions .ghost-action.danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.flow-snapshot-input-actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.flow-snapshot-quick-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.flow-snapshot-quick-list button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  background: white;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.flow-snapshot-quick-list button:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.flow-snapshot-quick-list button.active {
+  background: rgba(20, 184, 166, 0.12);
+  border-color: rgba(20, 184, 166, 0.4);
+  color: #0d7a6e;
+  font-weight: 600;
+}
+
+.flow-snapshot-quick-list small {
+  color: #6b7280;
+  font-weight: 400;
+}
+
+.flow-hidden-inline-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.flow-hidden-inline-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.flow-hidden-inline-list .ghost-action {
+  border: 1px solid var(--line);
+  background: white;
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.flow-hidden-inline-list .ghost-action:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* task-form KPI 드롭다운 */
+.task-form-kpi-select {
+  font-size: 13px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+  width: 100%;
+}
+
+/* 우선순위/마감일 인라인 편집 */
+.badge-button {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 999px;
+  transition: filter 0.15s;
+}
+
+.badge-button:hover {
+  filter: brightness(1.05);
+}
+
+.badge-button:focus {
+  outline: 2px solid rgba(20, 184, 166, 0.4);
+  outline-offset: 1px;
+}
+
+.meta-due-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: transparent;
+  border: 1px dashed transparent;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 12px;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.meta-due-button:hover {
+  background: rgba(20, 184, 166, 0.06);
+  border-color: rgba(20, 184, 166, 0.3);
+  color: #0d7a6e;
+}
+
+.inline-edit-select,
+.inline-edit-date {
+  height: 26px;
+  padding: 2px 6px;
+  font-size: 12px;
+  border: 1px solid rgba(20, 184, 166, 0.6);
+  border-radius: 6px;
+  background: white;
+  box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.15);
+}
+
+.inline-edit-select.priority,
+.inline-edit-select.status {
+  font-weight: 600;
+}
+
+/* 코멘트 카운트 — 마감일과 동일 박스 스타일 */
+.meta-comments-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: transparent;
+  border: 1px dashed transparent;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+/* 우선순위 업무 토글 (★) */
+.focus-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: transparent;
+  border: 1px dashed transparent;
+  border-radius: 4px;
+  padding: 1px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #9ca3af;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.focus-toggle:hover {
+  background: rgba(20, 184, 166, 0.06);
+  border-color: rgba(20, 184, 166, 0.3);
+  color: #0d7a6e;
+}
+
+.focus-toggle.on {
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.3);
+  border-style: solid;
 }
 
 .flow-hidden-list {

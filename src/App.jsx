@@ -1,10 +1,11 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth'
 import {
   Activity,
   AlertTriangle,
   BarChart3,
   Bot,
+  Calendar,
   Check,
   CheckCircle2,
   ClipboardList,
@@ -1278,7 +1279,7 @@ function TeamHome({ user, weekKey, weekLabel, teamFeed, actionItems, kpis, canMa
         </Panel>
       </section>
 
-      <KpiSection kpis={kpis} editable />
+      <KpiSection kpis={kpis} editable teamFeed={teamFeed} actionItems={actionItems} />
     </main>
   )
 }
@@ -1624,6 +1625,29 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel, kpis = [] }) {
     }
   }
 
+  // 여러 task를 한 번에 update — 루프로 updateTask 호출 시 stale closure로 덮어쓰는 문제 방지
+  async function updateTasksBatch(updates) {
+    if (!Array.isArray(updates) || updates.length === 0) return
+    const now = new Date().toISOString()
+    const patchMap = new Map(updates.map(u => [u.taskId, u.patch || {}]))
+    const next = tasks.map(task => {
+      if (!patchMap.has(task.id)) return task
+      const patch = patchMap.get(task.id)
+      const nextStatus = patch.status || task.status
+      return {
+        ...task,
+        ...patch,
+        completedAt: nextStatus === 'done' ? (task.completedAt || now) : null,
+        updatedAt: now,
+      }
+    })
+    try {
+      await persist(next)
+    } catch (error) {
+      setTaskError(`업무 일괄 저장 실패: ${error.message || '알 수 없는 오류'}\n  네트워크와 권한을 확인 후 다시 시도하세요.`)
+    }
+  }
+
   async function completeTask(taskId) {
     const task = tasks.find(item => item.id === taskId)
     if (!task) return
@@ -1955,11 +1979,65 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel, kpis = [] }) {
                 onChange={event => setDraft({ ...draft, title: event.target.value })}
                 placeholder="업무명"
               />
-              <input
+              <select
                 value={draft.impact}
                 onChange={event => setDraft({ ...draft, impact: event.target.value })}
-                placeholder="연결 KPI 또는 기대효과"
-              />
+                className="task-form-kpi-select"
+              >
+                <option value="">KPI 선택 (관리자가 등록한 목록)</option>
+                {(() => {
+                  // 본인 부서 KPI 우선 → 전사 공통 → 다른 부서 순으로 그룹핑
+                  const mySub = memberProfile?.subteam || ''
+                  const groups = { mine: [], all: [], others: [] }
+                  kpis.forEach(kpi => {
+                    const sub = kpi.subteam || 'all'
+                    if (sub === 'all') groups.all.push(kpi)
+                    else if (sub === mySub) groups.mine.push(kpi)
+                    else groups.others.push(kpi)
+                  })
+                  const blocks = []
+                  if (groups.mine.length > 0) {
+                    blocks.push(
+                      <optgroup key="mine" label={`내 부서 (${getSubteamLabel(mySub)})`}>
+                        {groups.mine.map(kpi => (
+                          <option key={kpi.id} value={kpi.label}>{kpi.label}</option>
+                        ))}
+                      </optgroup>,
+                    )
+                  }
+                  if (groups.all.length > 0) {
+                    blocks.push(
+                      <optgroup key="all" label="전사 공통">
+                        {groups.all.map(kpi => (
+                          <option key={kpi.id} value={kpi.label}>{kpi.label}</option>
+                        ))}
+                      </optgroup>,
+                    )
+                  }
+                  if (groups.others.length > 0) {
+                    // 다른 부서 KPI를 부서별로 묶음
+                    const byTeam = {}
+                    groups.others.forEach(kpi => {
+                      const k = kpi.subteam || 'misc'
+                      if (!byTeam[k]) byTeam[k] = []
+                      byTeam[k].push(kpi)
+                    })
+                    Object.entries(byTeam).forEach(([sub, items]) => {
+                      blocks.push(
+                        <optgroup key={`other-${sub}`} label={`다른 부서 — ${getSubteamLabel(sub)}`}>
+                          {items.map(kpi => (
+                            <option key={kpi.id} value={kpi.label}>{kpi.label}</option>
+                          ))}
+                        </optgroup>,
+                      )
+                    })
+                  }
+                  return blocks
+                })()}
+                {kpis.length === 0 && (
+                  <option value="" disabled>등록된 KPI가 없습니다 — 관리자가 먼저 등록해야 합니다</option>
+                )}
+              </select>
               <textarea
                 value={draft.detail}
                 onChange={event => setDraft({ ...draft, detail: event.target.value })}
@@ -2046,7 +2124,7 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel, kpis = [] }) {
 
       <div className="view-stack">
         <AINote user={user} weekKey={weekKey} weekLabel={weekLabel} completedTasks={completedTasks} />
-        <TaskFlowPanel user={user} tasks={tasks} history={history} kpis={kpis} onUpdateTask={updateTask} onDeleteTask={removeTask} />
+        <TaskFlowPanel user={user} tasks={tasks} history={history} kpis={kpis} onUpdateTask={updateTask} onUpdateTasksBatch={updateTasksBatch} onDeleteTask={removeTask} />
       </div>
     </main>
   )
@@ -2597,7 +2675,7 @@ function TeamBoard({ user, weekKey, teamFeed, actionItems, kpis, canManage, memb
 
   return (
     <main className="view-stack">
-      <KpiSection kpis={kpis} editable={canManage} />
+      <KpiSection kpis={kpis} editable={canManage} teamFeed={teamFeed} actionItems={actionItems} />
       <SubteamFilter value={subteamFilter} onChange={setSubteamFilter} />
 
       <section className="content-grid two">
@@ -3075,8 +3153,39 @@ function TaskEditor({ task, user, permissions, onChange, onComplete, onDelete, e
   const [draftStatus, setDraftStatus] = useState(task.status)
   const [draftPriority, setDraftPriority] = useState(task.priority)
   const [draftIsFocus, setDraftIsFocus] = useState(Boolean(task.isFocus))
+  const [inlineEditing, setInlineEditing] = useState(null) // 'priority' | 'due' | null
   const due = daysUntil(task.dueDate)
   const todayLogs = (task.progressLogs || []).filter(log => log.dateKey === getTodayKey())
+
+  async function handleInlinePriorityChange(newPriority) {
+    setInlineEditing(null)
+    if (newPriority === task.priority) return
+    setDraftPriority(newPriority)
+    await onChange({ priority: newPriority })
+  }
+
+  async function handleInlineDueChange(newDate) {
+    setInlineEditing(null)
+    if (newDate === (task.dueDate || '')) return
+    await onChange({ dueDate: newDate || '' })
+  }
+
+  async function handleInlineStatusChange(newStatus) {
+    setInlineEditing(null)
+    if (newStatus === task.status) return
+    setDraftStatus(newStatus)
+    if (newStatus === 'done') {
+      await onComplete()
+    } else {
+      await onChange({ status: newStatus })
+    }
+  }
+
+  async function handleToggleFocus() {
+    const next = !task.isFocus
+    setDraftIsFocus(next)
+    await onChange({ isFocus: next })
+  }
 
   useEffect(() => {
     setDraftStatus(task.status)
@@ -3139,38 +3248,101 @@ function TaskEditor({ task, user, permissions, onChange, onComplete, onDelete, e
             )
           })()}
           {task.detail && <p>{task.detail}</p>}
-          <div className="badge-row">
-            <Badge tone={PRIORITY_META[task.priority]?.tone}>{PRIORITY_META[task.priority]?.label || task.priority}</Badge>
-            {task.isFocus && <Badge tone="teal">우선순위</Badge>}
+          <div className="badge-row" onClick={event => event.stopPropagation()}>
+            {/* 상태 인라인 편집 */}
+            {inlineEditing === 'status' ? (
+              <select
+                className="inline-edit-select status"
+                value={task.status}
+                autoFocus
+                onChange={event => handleInlineStatusChange(event.target.value)}
+                onBlur={() => setInlineEditing(null)}
+              >
+                {Object.entries(STATUS_META).map(([key, meta]) => (
+                  <option key={key} value={key}>{meta.label}</option>
+                ))}
+              </select>
+            ) : (
+              <button
+                type="button"
+                className="badge-button"
+                onClick={() => setInlineEditing('status')}
+                title="클릭하여 상태 변경"
+              >
+                <Badge tone={STATUS_META[task.status]?.tone}>
+                  {STATUS_META[task.status]?.label || task.status}
+                </Badge>
+              </button>
+            )}
+            {/* 우선순위 인라인 편집 */}
+            {inlineEditing === 'priority' ? (
+              <select
+                className="inline-edit-select priority"
+                value={task.priority}
+                autoFocus
+                onChange={event => handleInlinePriorityChange(event.target.value)}
+                onBlur={() => setInlineEditing(null)}
+              >
+                {Object.entries(PRIORITY_META).map(([key, meta]) => (
+                  <option key={key} value={key}>{meta.label}</option>
+                ))}
+              </select>
+            ) : (
+              <button
+                type="button"
+                className="badge-button"
+                onClick={() => setInlineEditing('priority')}
+                title="클릭하여 우선순위 변경"
+              >
+                <Badge tone={PRIORITY_META[task.priority]?.tone}>
+                  {PRIORITY_META[task.priority]?.label || task.priority}
+                </Badge>
+              </button>
+            )}
+            {/* 우선순위 업무 토글 (★) */}
+            <button
+              type="button"
+              className={`focus-toggle ${task.isFocus ? 'on' : ''}`}
+              onClick={handleToggleFocus}
+              title={task.isFocus ? '우선순위 해제' : '우선순위 업무로 표시'}
+            >
+              {task.isFocus ? '★ 우선순위' : '☆ 우선순위'}
+            </button>
             {task.impact && <Badge tone="green">{task.impact}</Badge>}
             {(task.progressLogs || []).length > 0 && <Badge tone="teal">진행 {(task.progressLogs || []).length}</Badge>}
-            <span className="meta-due">{formatDue(task.dueDate)}</span>
-            <span className="meta-comments">코멘트 {(task.comments || []).length}</span>
+            {/* 마감일 인라인 편집 */}
+            {inlineEditing === 'due' ? (
+              <input
+                type="date"
+                className="inline-edit-date"
+                defaultValue={task.dueDate || ''}
+                autoFocus
+                onChange={event => handleInlineDueChange(event.target.value)}
+                onBlur={event => handleInlineDueChange(event.target.value)}
+              />
+            ) : (
+              <button
+                type="button"
+                className="meta-due-button"
+                onClick={() => setInlineEditing('due')}
+                title="클릭하여 마감일 변경"
+              >
+                <Calendar size={11} />
+                {formatDue(task.dueDate)}
+              </button>
+            )}
+            {/* 코멘트 카운트 (인라인 박스 스타일) */}
+            <span className="meta-comments-button">
+              <MessageSquareText size={11} />
+              코멘트 {(task.comments || []).length}
+            </span>
           </div>
         </div>
       </div>
         <div className="task-controls" onClick={event => event.stopPropagation()}>
-        <select value={draftStatus} onChange={event => setDraftStatus(event.target.value)}>
-          {Object.entries(STATUS_META).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}
-        </select>
-        <select value={draftPriority} onChange={event => setDraftPriority(event.target.value)}>
-          {Object.entries(PRIORITY_META).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}
-        </select>
-        <label className="check-toggle compact">
-          <input
-            type="checkbox"
-            checked={draftIsFocus}
-            onChange={event => setDraftIsFocus(event.target.checked)}
-          />
-          우선순위
-        </label>
-        <button className="secondary-action" onClick={handleConfirmStatus}>
-          <Check size={15} />
-          확인
-        </button>
-        <button className="icon-button subtle" onClick={onDelete} title="삭제">
-          <Trash2 size={15} />
-        </button>
+          <button className="icon-button subtle" onClick={onDelete} title="삭제">
+            <Trash2 size={15} />
+          </button>
         </div>
       </div>
       {expanded && (
@@ -3459,9 +3631,26 @@ function MemberCard({ member, isMe }) {
   )
 }
 
-function KpiSection({ kpis, editable = false }) {
-  const [draft, setDraft] = useState({ label: '', target: 100, unit: '%', current: 0 })
+function KpiSection({ kpis, editable = false, teamFeed = [], actionItems = [] }) {
+  const [draft, setDraft] = useState({ label: '', description: '', subteam: '' })
   const [error, setError] = useState('')
+
+  // 모든 팀 업무 + 진행 프로젝트(actionItems)를 한 풀로 모아서 KPI 라벨 매칭에 사용
+  const allLinkableTasks = useMemo(() => {
+    const teamTasks = teamFeed.flatMap(member => member.items || [])
+    return [...teamTasks, ...actionItems]
+  }, [teamFeed, actionItems])
+
+  // 부서별로 그룹핑 (UI 표시용)
+  const groupedKpis = useMemo(() => {
+    const groups = {}
+    kpis.forEach(kpi => {
+      const key = kpi.subteam || 'all'
+      if (!groups[key]) groups[key] = []
+      groups[key].push(kpi)
+    })
+    return groups
+  }, [kpis])
 
   async function handleCreate(event) {
     event.preventDefault()
@@ -3472,66 +3661,102 @@ function KpiSection({ kpis, editable = false }) {
         id: generateId('kpi'),
         sortOrder: Date.now(),
         label: draft.label.trim(),
-        current: Number(draft.current) || 0,
-        target: Number(draft.target) || 100,
-        unit: draft.unit.trim() || '%',
-        owner: '관리자',
+        description: draft.description.trim(),
+        subteam: draft.subteam || '',
+        subteamLabel: draft.subteam ? getSubteamLabel(draft.subteam) : '전사 공통',
+        // 진행률은 연결된 업무 카운트로 자동 산출되므로 수동 값은 의미 없으나, 호환성 위해 기본값 보존
+        current: 0,
+        target: 100,
+        unit: '%',
+        owner: draft.subteam ? getSubteamLabel(draft.subteam) : '전사',
         color: 'teal',
       })
-      setDraft({ label: '', target: 100, unit: '%', current: 0 })
+      setDraft({ label: '', description: '', subteam: '' })
     } catch (err) {
       setError(err.message || 'KPI 추가에 실패했습니다.')
     }
   }
 
+  // 그룹 표시 순서: SUBTEAMS 정의 순 → 'all' (전사 공통) → 미분류
+  const groupOrder = [
+    ...SUBTEAMS.map(t => t.id),
+    'all',
+  ]
+
   return (
     <Panel title="KPI 바" icon={BarChart3}>
       {editable && (
-        <form className="kpi-create-form" onSubmit={handleCreate}>
-          <input value={draft.label} onChange={event => setDraft({ ...draft, label: event.target.value })} placeholder="KPI명" />
-          <input value={draft.current} onChange={event => setDraft({ ...draft, current: event.target.value })} placeholder="현재값" />
-          <input value={draft.target} onChange={event => setDraft({ ...draft, target: event.target.value })} placeholder="목표값" />
-          <input value={draft.unit} onChange={event => setDraft({ ...draft, unit: event.target.value })} placeholder="단위" />
-          <button className="secondary-action" type="submit">
+        <form className="kpi-create-form compact" onSubmit={handleCreate}>
+          <button className="secondary-action kpi-add-btn" type="submit" disabled={!draft.label.trim()}>
             <Plus size={15} />
-            KPI 추가
+            추가
           </button>
+          <select
+            className="kpi-create-subteam"
+            value={draft.subteam}
+            onChange={event => setDraft({ ...draft, subteam: event.target.value })}
+            title="이 KPI를 담당하는 부서"
+          >
+            <option value="">전사 공통</option>
+            {SUBTEAMS.map(team => (
+              <option key={team.id} value={team.id}>{team.label}</option>
+            ))}
+          </select>
+          <input
+            className="kpi-create-label"
+            value={draft.label}
+            onChange={event => setDraft({ ...draft, label: event.target.value })}
+            placeholder="KPI명"
+          />
+          <input
+            className="kpi-create-description"
+            value={draft.description}
+            onChange={event => setDraft({ ...draft, description: event.target.value })}
+            placeholder="핵심 목표 / 세부 이행 필요내역"
+          />
         </form>
       )}
       {editable && error && <div className="alert error slim">{error}</div>}
-      <div className="kpi-grid">
-        {kpis.map(kpi => <KpiCard key={kpi.id} kpi={kpi} editable={editable} />)}
-        {kpis.length === 0 && <EmptyText text="등록된 KPI가 없습니다." />}
-      </div>
+      {kpis.length === 0 ? (
+        <EmptyText text="등록된 KPI가 없습니다." />
+      ) : (
+        <div className="kpi-grouped">
+          {groupOrder.map(key => {
+            const items = groupedKpis[key]
+            if (!items || items.length === 0) return null
+            const groupLabel = key === 'all' ? '전사 공통' : getSubteamLabel(key)
+            return (
+              <div key={key} className="kpi-group">
+                <h4 className="kpi-group-title">
+                  <span className={`kpi-group-tag subteam-${key}`}>{groupLabel}</span>
+                  <small>{items.length}개</small>
+                </h4>
+                <div className="kpi-grid">
+                  {items.map(kpi => (
+                    <KpiCard key={kpi.id} kpi={kpi} editable={editable} allLinkableTasks={allLinkableTasks} />
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </Panel>
   )
 }
 
-function KpiCard({ kpi, editable }) {
-  const pct = Math.min(percent(Number(kpi.current), Number(kpi.target)), 100)
-  const [value, setValue] = useState(kpi.current)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [saved, setSaved] = useState(false)
-
-  useEffect(() => {
-    setValue(kpi.current)
-  }, [kpi.current])
-
-  async function commitValue() {
-    if (!editable || String(value) === String(kpi.current)) return
-    setSaving(true)
-    setError('')
-    setSaved(false)
-    try {
-      await updateKpiValue(DEFAULT_TEAM_ID, kpi.id, value)
-      setSaved(true)
-    } catch (err) {
-      setError(err.message || 'KPI 저장에 실패했습니다.')
-    } finally {
-      setSaving(false)
-    }
-  }
+function KpiCard({ kpi, editable, allLinkableTasks = [] }) {
+  // 이 KPI 라벨에 연결된 업무 카운트 (task.kpi 또는 task.impact 매칭)
+  const linkedTasks = useMemo(
+    () => allLinkableTasks.filter(t => {
+      const label = String(t.kpi || t.impact || '').trim()
+      return label && label === kpi.label
+    }),
+    [allLinkableTasks, kpi.label],
+  )
+  const totalCount = linkedTasks.length
+  const completedCount = linkedTasks.filter(t => t.status === 'done').length
+  const pct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0
 
   async function handleDelete() {
     const ok = window.confirm(`"${kpi.label}" KPI를 삭제할까요?`)
@@ -3539,36 +3764,32 @@ function KpiCard({ kpi, editable }) {
     await deleteKpi(DEFAULT_TEAM_ID, kpi.id)
   }
 
+  const subteamKey = kpi.subteam || 'all'
+  const subteamLabel = subteamKey === 'all' ? '전사 공통' : getSubteamLabel(kpi.subteam)
+
   return (
     <article className={`kpi-card ${kpi.color || 'teal'}`}>
-      <span>{kpi.label}</span>
-      <strong>{Number(kpi.current).toLocaleString()}{kpi.unit}</strong>
-      <div className="progress-track"><span style={{ width: `${pct}%` }} /></div>
-      <div className="kpi-foot">
-        <small>목표 {Number(kpi.target).toLocaleString()}{kpi.unit}</small>
+      <div className="kpi-card-head">
+        <span className="kpi-card-label">{kpi.label}</span>
         {editable && (
-          <div className="kpi-edit">
-            <input
-              value={value}
-              onChange={event => {
-                setValue(event.target.value)
-                setSaved(false)
-                setError('')
-              }}
-              onKeyDown={event => event.key === 'Enter' && commitValue()}
-              aria-label={`${kpi.label} 현재값`}
-            />
-            <button className="secondary-action mini" onClick={commitValue} disabled={saving || String(value) === String(kpi.current)}>
-              {saving ? '저장 중' : '저장'}
-            </button>
-            <button className="icon-button subtle" onClick={handleDelete} title="KPI 삭제">
-              <Trash2 size={14} />
-            </button>
-          </div>
+          <button className="icon-button subtle kpi-card-delete" onClick={handleDelete} title="KPI 삭제">
+            <Trash2 size={14} />
+          </button>
         )}
       </div>
-      {editable && saved && <small className="save-state">저장됨</small>}
-      {editable && error && <small className="save-state error">{error}</small>}
+      <div className="kpi-card-meta">
+        <span className={`kpi-subteam-tag subteam-${subteamKey}`}>{subteamLabel}</span>
+      </div>
+      {kpi.description && <p className="kpi-card-description">{kpi.description}</p>}
+      <strong>
+        {totalCount > 0
+          ? <>업무 <span className="kpi-count-num">{completedCount}/{totalCount}</span> <small style={{ fontWeight: 400, opacity: 0.7 }}>완료</small></>
+          : <span className="kpi-count-empty">연결된 업무 없음</span>}
+      </strong>
+      <div className="progress-track"><span style={{ width: `${pct}%` }} /></div>
+      <div className="kpi-foot">
+        <small>{totalCount > 0 ? `${pct}% 완료` : '업무를 연결하면 자동 집계됩니다'}</small>
+      </div>
     </article>
   )
 }

@@ -58,21 +58,39 @@ if (-not [string]::IsNullOrWhiteSpace($kindTag)) {
 }
 Write-Host "  -> 최종 메시지: $msg" -ForegroundColor Green
 
-# 4. 주요 마일스톤 태그 입력 (선택)
-Write-Host ""
-Write-Host "=== 마일스톤 태그 (선택, Enter = 건너뛰기) ===" -ForegroundColor Yellow
-Write-Host "  주요 업무 완료 시 git tag도 같이 달려면 입력. 예: v0.3-흐름도-스냅샷"
-Write-Host "  형식: v{버전}-{한글설명} (공백 대신 하이픈, 한글 OK)"
-$milestoneTag = Read-Host "태그명 (선택)"
+# 4. 주요 마일스톤 태그 입력 (자동 추천 + 직접 입력 지원)
+$shortKind = switch ($kindChoice) {
+    "1" { "feat" }
+    "2" { "improve" }
+    "3" { "fix" }
+    "4" { "ui" }
+    "5" { "refactor" }
+    "6" { "docs" }
+    "7" { "config" }
+    "8" { "hotfix" }
+    default { "update" }
+}
 
-# 핫픽스인 경우 자동 태그 제안
-if ($kindTag -eq "[핫픽스]" -and [string]::IsNullOrWhiteSpace($milestoneTag)) {
-    $autoHotfix = "hotfix-" + (Get-Date -Format "yyyyMMdd-HHmm")
-    Write-Host "  핫픽스 자동 태그 제안: $autoHotfix" -ForegroundColor DarkGray
-    $useAuto = Read-Host "사용? (Y/n)"
-    if ($useAuto -ne "n" -and $useAuto -ne "N") {
-        $milestoneTag = $autoHotfix
-    }
+$dateStamp = Get-Date -Format "yyyyMMdd-HHmm"
+$defaultTag = "$shortKind-$dateStamp"
+
+Write-Host ""
+Write-Host "=== 마일스톤 태그 ===" -ForegroundColor Yellow
+Write-Host "  추천 태그: $defaultTag" -ForegroundColor Cyan
+Write-Host "  Enter        → 추천 그대로 사용" -ForegroundColor DarkGray
+Write-Host "  n            → 태그 건너뛰기" -ForegroundColor DarkGray
+Write-Host "  직접 입력     → 그 이름 사용 (예: v0.4-흐름도-스냅샷)" -ForegroundColor DarkGray
+$tagInput = Read-Host "선택"
+
+if ([string]::IsNullOrWhiteSpace($tagInput)) {
+    $milestoneTag = $defaultTag
+    Write-Host "  -> 추천 태그 사용: $milestoneTag" -ForegroundColor Green
+} elseif ($tagInput -eq "n" -or $tagInput -eq "N") {
+    $milestoneTag = ""
+    Write-Host "  -> 태그 건너뜀" -ForegroundColor DarkGray
+} else {
+    $milestoneTag = $tagInput.Trim()
+    Write-Host "  -> 입력한 태그 사용: $milestoneTag" -ForegroundColor Green
 }
 
 # 5. Update CHANGELOG.md
