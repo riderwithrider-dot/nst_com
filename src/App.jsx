@@ -2736,6 +2736,15 @@ function KpiCard({ kpi, editable }) {
 }
 
 function HistoryList({ history, currentWeekKey, currentCompletedTasks = [] }) {
+  const [expandedItems, setExpandedItems] = useState(new Set())
+  const toggleItem = (key) => {
+    setExpandedItems(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
   const currentRow = currentCompletedTasks.length > 0
     ? [{ weekKey: currentWeekKey, doneItems: currentCompletedTasks }]
     : []
@@ -2753,16 +2762,71 @@ function HistoryList({ history, currentWeekKey, currentCompletedTasks = [] }) {
   return (
     <div className="history-list">
       {rows.map(week => (
-        <details key={week.weekKey}>
+        <details key={week.weekKey} open>
           <summary>{weekKeyToLabel(week.weekKey)} <span>{week.doneItems.length}건</span></summary>
           <div className="history-table">
-            {week.doneItems.map(item => (
-              <article key={item.id} className="history-item">
-                <strong>{item.title}</strong>
-                <span>시작 {formatHistoryDate(item.createdAt)}</span>
-                <span>완료 {formatHistoryDate(item.completedAt || item.updatedAt)}</span>
-              </article>
-            ))}
+            {week.doneItems.map(item => {
+              const itemKey = `${week.weekKey}-${item.id}`
+              const isOpen = expandedItems.has(itemKey)
+              const progressLogs = item.progressLogs || []
+              const comments = item.comments || []
+              const hasContent = item.detail || progressLogs.length > 0 || comments.length > 0
+              return (
+                <article
+                  key={itemKey}
+                  className={`history-item ${isOpen ? 'expanded' : ''}`}
+                  onClick={() => toggleItem(itemKey)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggleItem(itemKey))}
+                >
+                  <div className="history-item-summary">
+                    <strong>{item.title}</strong>
+                    <span>시작 {formatHistoryDate(item.createdAt)}</span>
+                    <span>완료 {formatHistoryDate(item.completedAt || item.updatedAt)}</span>
+                  </div>
+                  {isOpen && (
+                    <div className="history-item-detail" onClick={e => e.stopPropagation()}>
+                      {item.detail && (
+                        <div className="history-section">
+                          <h4>설명</h4>
+                          <p>{item.detail}</p>
+                        </div>
+                      )}
+                      {progressLogs.length > 0 && (
+                        <div className="history-section">
+                          <h4>진행 내용 ({progressLogs.length})</h4>
+                          {progressLogs.map(log => (
+                            <div key={log.id} className="history-log">
+                              <span className="history-log-date">{formatHistoryDate(log.createdAt)}</span>
+                              <p>{log.text || log.note || ''}</p>
+                              {log.images?.length > 0 && <ImageStrip images={log.images} />}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {comments.length > 0 && (
+                        <div className="history-section">
+                          <h4>코멘트 ({comments.length})</h4>
+                          {comments.map(comment => (
+                            <div key={comment.id} className="history-comment">
+                              <div className="history-comment-head">
+                                <strong>{comment.authorName || '작성자 미상'}</strong>
+                                <span>{formatHistoryDate(comment.createdAt)}</span>
+                              </div>
+                              <p>{comment.text}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {!hasContent && (
+                        <p className="history-empty">남긴 내용이 없습니다.</p>
+                      )}
+                    </div>
+                  )}
+                </article>
+              )
+            })}
           </div>
         </details>
       ))}

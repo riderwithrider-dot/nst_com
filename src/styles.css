@@ -1512,23 +1512,121 @@ textarea:focus {
 }
 
 .history-item {
-  display: grid;
-  grid-template-columns: minmax(160px, 1fr) 140px 140px;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
-  align-items: center;
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface-soft);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.history-item strong {
+.history-item:hover {
+  background: rgba(20, 184, 166, 0.05);
+}
+
+.history-item.expanded {
+  border-color: rgba(20, 184, 166, 0.4);
+}
+
+.history-item-summary {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) 140px 140px;
+  gap: 10px;
+  align-items: center;
+}
+
+.history-item-summary strong {
   overflow-wrap: anywhere;
 }
 
-.history-item span {
+.history-item-summary span {
   color: var(--muted);
   font-size: 13px;
+}
+
+.history-item-detail {
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 6px;
+  border-left: 3px solid #14b8a6;
+  cursor: default;
+}
+
+.history-section {
+  margin-bottom: 14px;
+}
+
+.history-section:last-child {
+  margin-bottom: 0;
+}
+
+.history-section h4 {
+  font-size: 11px;
+  font-weight: 700;
+  color: #6b7280;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.history-section p {
+  font-size: 13px;
+  color: #374151;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.history-log {
+  padding: 6px 0;
+  border-bottom: 1px dashed rgba(0, 0, 0, 0.06);
+}
+
+.history-log:last-child {
+  border-bottom: none;
+}
+
+.history-log-date {
+  display: block;
+  font-size: 11px;
+  color: #6b7280;
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+
+.history-comment {
+  padding: 8px 0;
+  border-bottom: 1px dashed rgba(0, 0, 0, 0.06);
+}
+
+.history-comment:last-child {
+  border-bottom: none;
+}
+
+.history-comment-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+
+.history-comment-head strong {
+  font-size: 12px;
+  color: #1f2937;
+}
+
+.history-comment-head span {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.history-empty {
+  font-size: 12px;
+  color: #9ca3af;
+  font-style: italic;
+  margin: 0;
 }
 
 .signal-row {
@@ -1849,7 +1947,7 @@ textarea:focus {
 /* Status color stripe (left border) */
 .action-row,
 .task-editor {
-  border-left: 4px solid transparent;
+  border-left: 12px solid transparent;
 }
 .action-row.status-todo,
 .task-editor.status-todo {
