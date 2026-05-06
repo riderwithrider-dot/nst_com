@@ -43,6 +43,11 @@ service cloud.firestore {
           allow read: if isSelf(uid);
           allow write: if isSelf(uid);
         }
+
+        match /flowSnapshots/{snapshotId} {
+          allow read: if isSelf(uid);
+          allow write: if isSelf(uid);
+        }
       }
 
       match /weeks/{weekKey}/shared/{uid} {

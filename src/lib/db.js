@@ -591,6 +591,30 @@ export async function deleteIdeaNote(teamId, uid, noteId) {
   await deleteDoc(doc(db, 'teams', teamId, 'members', uid, 'notes', noteId))
 }
 
+export function subscribeFlowSnapshots(teamId, uid, callback) {
+  assertDb()
+  const ref = collection(db, 'teams', teamId, 'members', uid, 'flowSnapshots')
+  return onSnapshot(query(ref, orderBy('updatedAt', 'desc')), snap => {
+    callback(snap.docs.map(item => ({ id: item.id, ...item.data() })))
+  })
+}
+
+export async function saveFlowSnapshot(teamId, uid, snapshotId, data) {
+  assertDb()
+  const ref = doc(db, 'teams', teamId, 'members', uid, 'flowSnapshots', snapshotId)
+  const exists = await getDoc(ref)
+  await setDoc(ref, {
+    ...data,
+    createdAt: exists.exists() ? exists.data().createdAt : serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
+}
+
+export async function deleteFlowSnapshot(teamId, uid, snapshotId) {
+  assertDb()
+  await deleteDoc(doc(db, 'teams', teamId, 'members', uid, 'flowSnapshots', snapshotId))
+}
+
 export function subscribeChangeRequests(teamId, callback) {
   assertDb()
   const requestsRef = collection(db, 'teams', teamId, 'changeRequests')

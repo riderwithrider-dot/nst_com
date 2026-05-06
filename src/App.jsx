@@ -15,6 +15,7 @@ import {
   ListChecks,
   LogOut,
   MessageSquareText,
+  Pencil,
   Plus,
   RefreshCcw,
   Send,
@@ -1785,6 +1786,83 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel, kpis = [] }) {
     }
   }
 
+  async function updateTaskProgress(taskId, progressId, patch) {
+    const targetTask = tasks.find(task => task.id === taskId)
+    if (!targetTask) {
+      setTaskError(`업무(id=${taskId})를 찾을 수 없습니다. 새로고침 후 다시 시도하세요.`)
+      return
+    }
+    const targetLog = (targetTask.progressLogs || []).find(log => log.id === progressId)
+    if (!targetLog) {
+      setTaskError('이미 삭제되었거나 동기화 전 항목입니다. 새로고침 후 다시 시도하세요.')
+      return
+    }
+    const safePatch = { ...patch }
+    if (Object.prototype.hasOwnProperty.call(safePatch, 'text')) {
+      safePatch.text = String(safePatch.text || '').trim()
+    }
+    const next = tasks.map(task => {
+      if (task.id !== taskId) return task
+      return {
+        ...task,
+        progressLogs: (task.progressLogs || []).map(log => {
+          if (log.id !== progressId) return log
+          return {
+            ...log,
+            ...safePatch,
+            editedAt: new Date().toISOString(),
+          }
+        }),
+        updatedAt: new Date().toISOString(),
+      }
+    })
+    try {
+      await persist(next)
+    } catch (error) {
+      setTaskError(`진행내용 수정 실패: ${error.message || '알 수 없는 오류'}\n  네트워크와 권한을 확인 후 다시 시도하세요.`)
+    }
+  }
+
+  async function deleteTaskProgress(taskId, progressId) {
+    const targetTask = tasks.find(task => task.id === taskId)
+    if (!targetTask) {
+      setTaskError(`업무(id=${taskId})를 찾을 수 없습니다. 새로고침 후 다시 시도하세요.`)
+      return
+    }
+    const targetLog = (targetTask.progressLogs || []).find(log => log.id === progressId)
+    if (!targetLog) {
+      setTaskError('이미 삭제되었거나 동기화 전 항목입니다. 새로고침 후 다시 시도하세요.')
+      return
+    }
+    const ok = window.confirm('이 진행내용을 삭제할까요? 첨부된 이미지도 같이 삭제됩니다.')
+    if (!ok) return
+
+    const imagePaths = (targetLog.images || []).map(img => img.path).filter(Boolean)
+
+    const next = tasks.map(task => {
+      if (task.id !== taskId) return task
+      return {
+        ...task,
+        progressLogs: (task.progressLogs || []).filter(log => log.id !== progressId),
+        updatedAt: new Date().toISOString(),
+      }
+    })
+
+    try {
+      await persist(next)
+      if (imagePaths.length > 0) {
+        try {
+          await deleteStorageFiles(imagePaths)
+        } catch (storageErr) {
+          // 메타데이터는 이미 삭제됐으므로 사용자에게는 경고만, 진행은 계속
+          setMessage(`진행내용은 삭제됐지만 이미지 파일 정리에 실패했습니다: ${storageErr.message}\n  Storage 콘솔에서 직접 정리하세요.`)
+        }
+      }
+    } catch (error) {
+      setTaskError(`진행내용 삭제 실패: ${error.message || '알 수 없는 오류'}\n  네트워크와 권한을 확인 후 다시 시도하세요.`)
+    }
+  }
+
   async function removeTask(taskId) {
     try {
       const targetTask = tasks.find(task => task.id === taskId)
@@ -1932,6 +2010,8 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel, kpis = [] }) {
                 onToggleExpand={() => setOpenTaskId(openTaskId === task.id ? null : task.id)}
                 onAddComment={text => addTaskComment(task.id, text)}
                 onAddProgress={(text, files) => addTaskProgress(task.id, text, files)}
+                onUpdateProgress={(taskId, progressId, patch) => updateTaskProgress(taskId, progressId, patch)}
+                onDeleteProgress={(taskId, progressId) => deleteTaskProgress(taskId, progressId)}
                 onReplyComment={(commentId, text) => addTaskCommentReply(task.id, commentId, text)}
                 onDeleteComment={commentId => deleteTaskComment(task.id, commentId)}
                 user={user}
@@ -1956,7 +2036,7 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel, kpis = [] }) {
             {dailyReportSaving ? '생성 중' : '보고서 생성'}
           </button>
         }>
-          <TodayHighlights logs={todayHighlights} />
+          <TodayHighlights logs={todayHighlights} onDelete={deleteTaskProgress} onUpdate={updateTaskProgress} />
         </Panel>
 
         <Panel title="완료 업무 히스토리" icon={RefreshCcw}>
@@ -1966,7 +2046,7 @@ function PersonalBoard({ user, memberProfile, weekKey, weekLabel, kpis = [] }) {
 
       <div className="view-stack">
         <AINote user={user} weekKey={weekKey} weekLabel={weekLabel} completedTasks={completedTasks} />
-        <TaskFlowPanel tasks={tasks} history={history} kpis={kpis} onUpdateTask={updateTask} />
+        <TaskFlowPanel user={user} tasks={tasks} history={history} kpis={kpis} onUpdateTask={updateTask} onDeleteTask={removeTask} />
       </div>
     </main>
   )
@@ -2060,7 +2140,7 @@ function AINote({ user, weekKey, weekLabel, completedTasks }) {
   )
 }
 
-function TodayHighlights({ logs }) {
+function TodayHighlights({ logs, onDelete, onUpdate }) {
   if (logs.length === 0) {
     return <EmptyText text="오늘 입력된 주요업무가 없습니다. 각 업무를 눌러 오늘 진행내용을 입력해보세요." />
   }
@@ -2068,17 +2148,165 @@ function TodayHighlights({ logs }) {
   return (
     <div className="today-highlight-list">
       {logs.map(log => (
-        <article className="today-highlight-item" key={`${log.taskId}-${log.id}`}>
-          <div>
-            <Badge tone="teal">{log.taskTitle}</Badge>
-            {log.impact && <Badge tone="green">{log.impact}</Badge>}
-            <span>{formatCommentTime(log.createdAt)}</span>
-          </div>
-          {log.text && <p>{log.text}</p>}
-          {log.images?.length > 0 && <ImageStrip images={log.images} />}
-        </article>
+        <TodayHighlightItem
+          key={`${log.taskId}-${log.id}`}
+          log={log}
+          onDelete={onDelete}
+          onUpdate={onUpdate}
+        />
       ))}
     </div>
+  )
+}
+
+function TodayHighlightItem({ log, onDelete, onUpdate }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(log.text || '')
+
+  function startEdit() {
+    setDraft(log.text || '')
+    setEditing(true)
+  }
+
+  function cancelEdit() {
+    setEditing(false)
+    setDraft(log.text || '')
+  }
+
+  async function saveEdit() {
+    const next = draft.trim()
+    if (next === (log.text || '').trim()) {
+      setEditing(false)
+      return
+    }
+    if (onUpdate) {
+      await onUpdate(log.taskId, log.id, { text: next })
+    }
+    setEditing(false)
+  }
+
+  return (
+    <article className="today-highlight-item">
+      <div className="today-highlight-head">
+        <div className="today-highlight-meta">
+          <Badge tone="teal">{log.taskTitle}</Badge>
+          {log.impact && <Badge tone="green">{log.impact}</Badge>}
+          <span>{formatCommentTime(log.createdAt)}</span>
+          {log.editedAt && <span className="today-highlight-edited">(수정됨)</span>}
+        </div>
+        {(onUpdate || onDelete) && !editing && (
+          <div className="today-highlight-actions">
+            {onUpdate && (
+              <button type="button" className="icon-button subtle" onClick={startEdit} title="편집">
+                <Pencil size={13} />
+              </button>
+            )}
+            {onDelete && (
+              <button type="button" className="icon-button subtle" onClick={() => onDelete(log.taskId, log.id)} title="삭제">
+                <Trash2 size={13} />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      {editing ? (
+        <div className="today-highlight-edit">
+          <textarea
+            value={draft}
+            onChange={event => setDraft(event.target.value)}
+            placeholder="진행내용을 수정하세요"
+            rows={3}
+            autoFocus
+          />
+          <div className="today-highlight-edit-actions">
+            <button type="button" className="ghost-action" onClick={cancelEdit}>취소</button>
+            <button type="button" className="secondary-action" onClick={saveEdit}>
+              <Check size={14} /> 저장
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {log.text && <p>{log.text}</p>}
+          {log.images?.length > 0 && <ImageStrip images={log.images} />}
+        </>
+      )}
+    </article>
+  )
+}
+
+function ProgressLogItem({ log, canEdit, canDelete, onUpdate, onDelete }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(log.text || '')
+
+  function startEdit() {
+    setDraft(log.text || '')
+    setEditing(true)
+  }
+
+  function cancelEdit() {
+    setEditing(false)
+    setDraft(log.text || '')
+  }
+
+  async function saveEdit() {
+    const next = draft.trim()
+    if (next === (log.text || '').trim()) {
+      setEditing(false)
+      return
+    }
+    if (onUpdate) {
+      await onUpdate(next)
+    }
+    setEditing(false)
+  }
+
+  return (
+    <article className="comment-item progress-item">
+      <div className="progress-item-head">
+        <div className="progress-item-meta">
+          <strong>{log.authorName || '작성자'}</strong>
+          <span>{formatCommentTime(log.createdAt)}</span>
+          {log.editedAt && <span className="today-highlight-edited">(수정됨)</span>}
+        </div>
+        {(canEdit || canDelete) && !editing && (
+          <div className="progress-item-actions">
+            {canEdit && (
+              <button type="button" className="icon-button subtle" onClick={startEdit} title="편집">
+                <Pencil size={13} />
+              </button>
+            )}
+            {canDelete && (
+              <button type="button" className="icon-button subtle" onClick={onDelete} title="삭제">
+                <Trash2 size={13} />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      {editing ? (
+        <div className="today-highlight-edit">
+          <textarea
+            value={draft}
+            onChange={event => setDraft(event.target.value)}
+            placeholder="진행내용을 수정하세요"
+            rows={3}
+            autoFocus
+          />
+          <div className="today-highlight-edit-actions">
+            <button type="button" className="ghost-action" onClick={cancelEdit}>취소</button>
+            <button type="button" className="secondary-action" onClick={saveEdit}>
+              <Check size={14} /> 저장
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {log.text && <p>{log.text}</p>}
+          {log.images?.length > 0 && <ImageStrip images={log.images} />}
+        </>
+      )}
+    </article>
   )
 }
 
@@ -2839,7 +3067,7 @@ function DailyReportHistory({ reports, openReportId, onToggle }) {
   )
 }
 
-function TaskEditor({ task, user, permissions, onChange, onComplete, onDelete, expanded, onToggleExpand, onAddComment, onAddProgress, onReplyComment, onDeleteComment, allTasks = [] }) {
+function TaskEditor({ task, user, permissions, onChange, onComplete, onDelete, expanded, onToggleExpand, onAddComment, onAddProgress, onUpdateProgress, onDeleteProgress, onReplyComment, onDeleteComment, allTasks = [] }) {
   const members = useContext(MembersContext)
   const [progressDraft, setProgressDraft] = useState('')
   const [progressImages, setProgressImages] = useState([])
@@ -2985,14 +3213,14 @@ function TaskEditor({ task, user, permissions, onChange, onComplete, onDelete, e
           )}
           <div className="comment-list progress-list">
             {todayLogs.map(log => (
-              <article className="comment-item progress-item" key={log.id}>
-                <div>
-                  <strong>{log.authorName || '작성자'}</strong>
-                  <span>{formatCommentTime(log.createdAt)}</span>
-                </div>
-                {log.text && <p>{log.text}</p>}
-                {log.images?.length > 0 && <ImageStrip images={log.images} />}
-              </article>
+              <ProgressLogItem
+                key={log.id}
+                log={log}
+                canEdit={!!onUpdateProgress && log.authorUid === user?.uid}
+                canDelete={!!onDeleteProgress && log.authorUid === user?.uid}
+                onUpdate={text => onUpdateProgress?.(task.id, log.id, { text })}
+                onDelete={() => onDeleteProgress?.(task.id, log.id)}
+              />
             ))}
             {todayLogs.length === 0 && <EmptyText text="오늘 입력한 진행내용이 없습니다." />}
           </div>
