@@ -39,6 +39,7 @@ export function stripCodeFence(text) {
 function getMaxOutputTokens(mode) {
   if (mode === 'dailyReport') return 3200
   if (mode === 'teamReport') return 1800
+  if (mode === 'weeklyRetro') return 800
   return 1200
 }
 
@@ -179,6 +180,41 @@ ${kpis.map(kpi => `- ${kpi.label}: ${kpi.current}${kpi.unit || ''} / 목표 ${kp
     "subject": "[NST BIO] 일일업무보고 - YYYY년 M월 D일",
     "body": "안녕하세요. 본부장님\\n\\nM월 D일자 일일업무보고 송부드립니다.\\n\\n오전1 (09:00~11:30)\\n09:00~10:00 업무내용\\n\\n오후1 (12:30~18:00)\\n*12:30~13:30 업무내용\\n*13:30~15:00 업무내용\\n\\n끝.\\n\\n감사합니다."
   }
+}`
+  }
+
+  if (mode === 'weeklyRetro') {
+    const stats = safePayload.stats || {}
+    const bySubteam = safePayload.bySubteam || []
+    const byKpi = safePayload.byKpi || []
+    const carryOver = safePayload.carryOverTitles || []
+    const previousStats = safePayload.previousStats || null
+    return `당신은 NST BIO 마케팅본부 커머스 PM입니다.
+이번 주 회고 데이터를 보고 본부장에게 공유 가능한 짧은 인사이트 한 단락(2~3문장)을 만드세요.
+
+주차: ${safePayload.weekLabel || ''}
+이번 주: 완료 ${stats.completed ?? 0}건 · 지연 ${stats.delayed ?? 0}건 · 신규 ${stats.created ?? 0}건 · 진척률 ${stats.progress ?? 0}%
+${previousStats ? `이전 주: 완료 ${previousStats.completed ?? 0}건 · 지연 ${previousStats.delayed ?? 0}건 · 진척률 ${previousStats.progress ?? 0}%` : ''}
+
+부서별 진척률:
+${bySubteam.map(s => `- ${s.label}: ${s.completed}/${s.total} (${s.pct}%)`).join('\n')}
+
+KPI별 진척률 (Top):
+${byKpi.map(k => `- ${k.label}: ${k.completed}/${k.total} (${k.pct}%)`).join('\n')}
+
+다음 주 carry-over 후보:
+${carryOver.map(t => `- ${t}`).join('\n')}
+
+기준:
+- 데이터 기반으로만 작성. 과장 금지.
+- 평소 대비 변화(증가/감소)가 있다면 명시.
+- 어느 부서/KPI를 가장 주의해서 봐야 할지 한 가지 짚어주세요.
+
+반드시 아래 JSON만 응답하세요.
+{
+  "headline": "이번 주를 한 문장으로 요약",
+  "insight": "본부장 관점 인사이트 2~3문장",
+  "recommendation": "다음 주에 가장 먼저 확인해야 할 액션 한 줄"
 }`
   }
 

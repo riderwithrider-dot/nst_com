@@ -37,3 +37,29 @@ export function daysUntil(value) {
 export function generateId(prefix = 'id') {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 }
+
+// 주어진 weekKey의 직전 주차 key 반환 (예: '2026-W19' → '2026-W18')
+// 연도 경계는 단순 처리 (W01 → 전년 W52). 53주 케이스 무시.
+export function getPrevWeekKey(weekKey) {
+  if (!weekKey) return null
+  const [yearStr, weekStr] = weekKey.split('-W')
+  const year = Number(yearStr)
+  const week = Number(weekStr)
+  if (!Number.isFinite(year) || !Number.isFinite(week)) return null
+  if (week > 1) return `${year}-W${String(week - 1).padStart(2, '0')}`
+  return `${year - 1}-W52`
+}
+
+// 정기 반복 주기에 따라 "이번 주차의 직전 발생 주차"를 계산
+// weekly: 1주 전, monthly: 4주 전(근사), quarterly: 13주 전(근사)
+export function getRecurrencePrevKey(weekKey, type) {
+  if (!weekKey || !type) return null
+  let key = weekKey
+  const offsets = { weekly: 1, monthly: 4, quarterly: 13 }
+  const offset = offsets[type] || 0
+  for (let i = 0; i < offset; i += 1) {
+    key = getPrevWeekKey(key)
+    if (!key) return null
+  }
+  return key
+}

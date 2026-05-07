@@ -1,0 +1,1172 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>목업 — 업무 목록 레이아웃 + 개인 부담도 + 주간 회고 + 점검/인박스 분할</title>
+<style>
+  :root {
+    --bg: #f5f7f6;
+    --card: #ffffff;
+    --line: #e3e8e5;
+    --line-strong: #cfd6d2;
+    --ink: #18211d;
+    --ink-soft: #4d5b54;
+    --muted: #7a857f;
+    --accent: #0d7a6e;
+    --accent-soft: #e6f4f1;
+    --warn: #f59e0b;
+    --warn-soft: #fef3c7;
+    --warn-strong: #b45309;
+    --danger: #ef4444;
+    --danger-soft: #fee2e2;
+    --danger-strong: #b91c1c;
+    --info: #3b82f6;
+    --info-soft: #dbeafe;
+    --ok: #10b981;
+    --ok-soft: #d1fae5;
+    --gray: #9ca3af;
+    --gray-soft: #f3f4f6;
+    --shadow: 0 6px 20px rgba(0,0,0,0.05);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  header.page {
+    padding: 28px 32px 12px;
+    border-bottom: 1px solid var(--line);
+    background: white;
+  }
+  header.page h1 { margin: 0 0 4px; font-size: 22px; }
+  header.page p { margin: 0; color: var(--muted); }
+  main {
+    padding: 24px 32px 80px;
+    max-width: 1480px;
+    margin: 0 auto;
+  }
+  section.block {
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 24px 26px;
+    margin-bottom: 36px;
+    box-shadow: var(--shadow);
+  }
+  section.block > h2 {
+    margin: 0 0 4px;
+    font-size: 17px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  section.block > .lead {
+    color: var(--muted);
+    margin: 0 0 18px;
+  }
+  .priority-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    color: white;
+  }
+  .priority-1 { background: #16a34a; }
+  .priority-2 { background: #2563eb; }
+  .priority-3 { background: #9333ea; }
+
+  /* layout heading */
+  .layout-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 22px 0 10px;
+    padding: 10px 14px;
+    background: var(--gray-soft);
+    border-radius: 10px;
+  }
+  .layout-head h3 { margin: 0; font-size: 15px; }
+  .layout-head small { color: var(--muted); }
+  .layout-head .pill {
+    margin-left: auto;
+    background: var(--accent);
+    color: white;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  /* common chips */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    border: 1px solid var(--line-strong);
+    background: white;
+    color: var(--ink-soft);
+    white-space: nowrap;
+  }
+  .chip.kpi { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .chip.due-warn { background: var(--warn-soft); border-color: var(--warn); color: var(--warn-strong); font-weight: 600; }
+  .chip.due-danger { background: var(--danger-soft); border-color: var(--danger); color: var(--danger-strong); font-weight: 600; }
+  .chip.due-ok { background: var(--info-soft); border-color: var(--info); color: #1e3a8a; }
+  .chip.status-doing { background: var(--info-soft); color: #1e3a8a; border-color: var(--info); }
+  .chip.status-todo { background: var(--gray-soft); color: var(--ink-soft); border-color: var(--line-strong); }
+  .chip.status-review { background: var(--warn-soft); color: var(--warn-strong); border-color: var(--warn); }
+  .chip.status-blocked { background: var(--danger-soft); color: var(--danger-strong); border-color: var(--danger); }
+  .star { color: var(--warn); }
+
+  /* ============ A. 우선순위 칸반 ============ */
+  .kanban {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px;
+  }
+  .kanban-col {
+    background: var(--gray-soft);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px 12px 14px;
+    min-height: 240px;
+  }
+  .kanban-col.focus {
+    background: #fff8ec;
+    border-color: var(--warn);
+  }
+  .kanban-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 8px;
+    margin-bottom: 10px;
+    border-bottom: 1px dashed var(--line-strong);
+  }
+  .kanban-head strong { font-size: 13px; }
+  .kanban-head span.cnt {
+    background: white;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    padding: 1px 8px;
+    font-size: 11px;
+    color: var(--ink-soft);
+  }
+  .kanban-card {
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .kanban-card .title {
+    font-weight: 600;
+    color: var(--ink);
+    line-height: 1.35;
+  }
+  .kanban-card .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+  .kanban-card .progress {
+    background: #ecf0ee;
+    border-radius: 4px;
+    height: 4px;
+    overflow: hidden;
+  }
+  .kanban-card .progress > i {
+    display: block;
+    height: 100%;
+    background: var(--accent);
+  }
+  .kanban-card.focus { border-left: 3px solid var(--warn); }
+
+  /* ============ B. 압축 리스트 ============ */
+  .compact-list {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+    background: white;
+  }
+  .compact-group-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    background: var(--gray-soft);
+    border-top: 1px solid var(--line);
+    font-size: 12px;
+    color: var(--ink-soft);
+    font-weight: 700;
+  }
+  .compact-group-head:first-child { border-top: 0; }
+  .compact-group-head.focus { background: #fff8ec; color: var(--warn-strong); }
+  .compact-row {
+    display: grid;
+    grid-template-columns: 24px 1fr auto auto auto auto;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 14px;
+    border-top: 1px solid var(--line);
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+  .compact-row:hover { background: #f9fbfa; }
+  .compact-row .pri-bar {
+    width: 4px;
+    height: 22px;
+    border-radius: 2px;
+    background: var(--gray);
+  }
+  .compact-row.focus .pri-bar { background: var(--warn); }
+  .compact-row.normal .pri-bar { background: var(--info); }
+  .compact-row.standby .pri-bar { background: var(--gray); }
+  .compact-row .title { font-weight: 600; }
+  .compact-row .meta-chips {
+    display: flex;
+    gap: 4px;
+  }
+  .compact-row .progress-mini {
+    width: 70px;
+    height: 4px;
+    background: #ecf0ee;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .compact-row .progress-mini > i {
+    display: block;
+    height: 100%;
+    background: var(--accent);
+  }
+
+  /* ============ C. 매트릭스 ============ */
+  .matrix {
+    display: grid;
+    grid-template-columns: 60px 1fr 1fr;
+    grid-template-rows: 30px 1fr 1fr;
+    gap: 8px;
+  }
+  .mtx-axis-x {
+    grid-column: 2 / 4;
+    grid-row: 1;
+    text-align: center;
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 12px;
+  }
+  .mtx-axis-y {
+    grid-row: 2 / 4;
+    grid-column: 1;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    text-align: center;
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 12px;
+    align-self: center;
+  }
+  .mtx-cell {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px;
+    min-height: 140px;
+  }
+  .mtx-cell.urgent-important { background: #fff1f0; border-color: var(--danger); }
+  .mtx-cell.urgent-normal { background: #fef3c7; border-color: var(--warn); }
+  .mtx-cell.long-important { background: var(--info-soft); border-color: var(--info); }
+  .mtx-cell.long-normal { background: var(--gray-soft); border-color: var(--line-strong); }
+  .mtx-cell h4 {
+    margin: 0 0 8px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .mtx-cell h4 small {
+    background: white;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    padding: 1px 8px;
+    color: var(--ink-soft);
+    font-weight: 600;
+    font-size: 10.5px;
+  }
+  .mtx-cell ul { margin: 0; padding-left: 18px; }
+  .mtx-cell ul li { margin-bottom: 5px; line-height: 1.4; font-size: 12.5px; }
+
+  /* ============ Personal Load Signal ============ */
+  .load-grid {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 18px;
+  }
+  .dept-card {
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    cursor: pointer;
+  }
+  .dept-card.active {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .dept-card.warn { border-left: 4px solid var(--danger); }
+  .dept-card .head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 4px;
+  }
+  .dept-card .head strong { font-size: 14px; }
+  .dept-card .head .num { font-weight: 700; color: var(--accent); }
+  .dept-card .bar {
+    height: 6px;
+    background: var(--gray-soft);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .dept-card .bar > i {
+    display: block;
+    height: 100%;
+    background: var(--accent);
+  }
+  .dept-card .bar > i.over {
+    background: var(--danger);
+  }
+  .dept-card .alert {
+    margin-top: 6px;
+    padding: 4px 8px;
+    background: var(--danger-soft);
+    color: var(--danger-strong);
+    border-radius: 6px;
+    font-size: 11.5px;
+    font-weight: 600;
+  }
+
+  .member-pane {
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .member-pane h3 { margin: 0 0 12px; font-size: 15px; }
+  .member-row {
+    display: grid;
+    grid-template-columns: 130px 1fr 80px 80px;
+    gap: 10px;
+    align-items: center;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin-bottom: 6px;
+    cursor: pointer;
+  }
+  .member-row:hover { background: #f9fbfa; }
+  .member-row.alert { border-left: 4px solid var(--danger); }
+  .member-row .name {
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .member-row .name .badge-alert {
+    background: var(--danger);
+    color: white;
+    border-radius: 999px;
+    font-size: 10px;
+    padding: 1px 6px;
+    font-weight: 700;
+  }
+  .member-row .stack {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .member-row .stat {
+    text-align: center;
+    background: var(--gray-soft);
+    border-radius: 6px;
+    padding: 4px;
+    font-size: 11.5px;
+  }
+  .member-row .stat strong { display: block; font-size: 14px; }
+  .member-row .stat.delay { background: var(--danger-soft); color: var(--danger-strong); }
+
+  .member-tasks {
+    margin-top: 8px;
+    padding: 12px;
+    background: var(--gray-soft);
+    border-radius: 8px;
+    grid-column: 1 / -1;
+  }
+  .member-tasks .task-line {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 8px;
+    background: white;
+    border-radius: 6px;
+    margin-bottom: 4px;
+    font-size: 12px;
+  }
+  .member-tasks .task-line.delay {
+    border-left: 3px solid var(--danger);
+  }
+
+  /* ============ Weekly Retrospective ============ */
+  .retro-wrap {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .retro-head {
+    background: linear-gradient(135deg, #0d7a6e, #1e7c93);
+    color: white;
+    padding: 18px 22px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .retro-head h3 { margin: 0; font-size: 16px; }
+  .retro-head .auto-tag {
+    background: rgba(255,255,255,0.2);
+    border: 1px solid rgba(255,255,255,0.4);
+    color: white;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+  }
+  .retro-body { padding: 18px 22px; }
+  .retro-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .retro-stat {
+    background: var(--gray-soft);
+    padding: 12px 14px;
+    border-radius: 10px;
+    text-align: center;
+  }
+  .retro-stat .n {
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--accent);
+  }
+  .retro-stat .label { color: var(--muted); font-size: 12px; }
+  .retro-stat.warn .n { color: var(--danger); }
+  .retro-stat.info .n { color: var(--info); }
+
+  .retro-bars { display: grid; gap: 8px; margin-bottom: 16px; }
+  .retro-bar {
+    display: grid;
+    grid-template-columns: 110px 1fr 60px;
+    align-items: center;
+    gap: 10px;
+    font-size: 12.5px;
+  }
+  .retro-bar .label { font-weight: 600; }
+  .retro-bar .track {
+    background: var(--gray-soft);
+    height: 14px;
+    border-radius: 7px;
+    overflow: hidden;
+  }
+  .retro-bar .track > i {
+    display: block;
+    height: 100%;
+    background: var(--accent);
+  }
+  .retro-bar .pct { text-align: right; font-weight: 700; color: var(--accent); }
+
+  .retro-insight {
+    background: #fffbeb;
+    border: 1px solid var(--warn);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+  }
+  .retro-insight strong { color: var(--warn-strong); }
+
+  .retro-carryover {
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .retro-carryover strong { color: var(--accent); }
+  .retro-carryover ul { margin: 6px 0 0; padding-left: 22px; }
+
+  /* ============ Signal + Inbox split ============ */
+  .split-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .split-col {
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .split-col h3 {
+    margin: 0 0 10px;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .signal-tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+  .signal-tab {
+    padding: 6px 11px;
+    border-radius: 8px;
+    background: var(--gray-soft);
+    border: 1px solid var(--line-strong);
+    font-size: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .signal-tab.active {
+    background: var(--ink);
+    color: white;
+    border-color: var(--ink);
+  }
+  .signal-tab .cnt {
+    background: rgba(255,255,255,0.25);
+    border-radius: 999px;
+    padding: 0 6px;
+    font-weight: 700;
+    font-size: 11px;
+  }
+  .signal-tab:not(.active) .cnt {
+    background: white;
+    color: var(--ink);
+  }
+  .signal-tab.danger.active { background: var(--danger); border-color: var(--danger); }
+  .signal-tab.warn.active { background: var(--warn); border-color: var(--warn); }
+  .signal-tab.info.active { background: var(--info); border-color: var(--info); }
+  .signal-tab.ok.active { background: var(--ok); border-color: var(--ok); }
+
+  .signal-row {
+    display: grid;
+    grid-template-columns: 90px 1fr auto;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin-bottom: 6px;
+    font-size: 12.5px;
+    align-items: center;
+  }
+  .signal-row .who {
+    background: var(--gray-soft);
+    border-radius: 6px;
+    padding: 3px 8px;
+    text-align: center;
+    font-weight: 600;
+  }
+
+  .inbox-row {
+    display: flex;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin-bottom: 6px;
+    font-size: 12.5px;
+    align-items: flex-start;
+  }
+  .inbox-row .avatar {
+    width: 32px;
+    height: 32px;
+    background: var(--accent);
+    color: white;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .inbox-row .text { flex: 1; }
+  .inbox-row .text strong { display: block; }
+  .inbox-row .text small { color: var(--muted); }
+  .inbox-row .quote {
+    background: var(--gray-soft);
+    border-left: 3px solid var(--accent);
+    padding: 6px 8px;
+    margin-top: 4px;
+    border-radius: 0 6px 6px 0;
+    font-size: 11.5px;
+    color: var(--ink-soft);
+  }
+
+  .recommend {
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-top: 10px;
+  }
+  .recommend strong { color: var(--accent); }
+</style>
+</head>
+<body>
+<header class="page">
+  <h1>목업 — 새 기능 4종 (2026-05-07)</h1>
+  <p>① 이번 주 업무 목록 레이아웃 3가지 / ② 개인 부담도 신호 / ③ 주간 자동 회고 / ④ 점검신호+코멘트인박스 좌우 분할</p>
+</header>
+<main>
+
+<!-- =================== 1. 이번 주 업무 목록 레이아웃 =================== -->
+<section class="block">
+  <h2><span class="priority-badge priority-1">1순위</span> 이번 주 업무 목록 — 레이아웃 3가지 비교</h2>
+  <p class="lead">
+    현재는 단순 나열식이라 우선순위가 한눈에 안 들어옴. 아래 3가지 안 중 하나를 골라서 적용.
+    추천 순서: A &gt; B &gt; C.
+  </p>
+
+  <!-- A. 우선순위 칸반 -->
+  <div class="layout-head">
+    <h3>레이아웃 A — 우선순위 칸반 (3 컬럼)</h3>
+    <small>· 한 화면에 좌우로 비교, 우선순위가 즉각 시각화</small>
+    <span class="pill">★ 추천 1순위</span>
+  </div>
+  <div class="kanban">
+    <div class="kanban-col focus">
+      <div class="kanban-head">
+        <strong>★ 우선순위 업무</strong>
+        <span class="cnt">2건</span>
+      </div>
+      <div class="kanban-card focus">
+        <div class="title">2분기 본부장 보고 자료 초안</div>
+        <div class="row">
+          <span class="chip status-doing">진행</span>
+          <span class="chip due-danger">D-1</span>
+          <span class="chip kpi">KPI · 매출</span>
+        </div>
+        <div class="progress"><i style="width:70%"></i></div>
+      </div>
+      <div class="kanban-card focus">
+        <div class="title">SKU 재고 분석 보고서</div>
+        <div class="row">
+          <span class="chip status-review">검토</span>
+          <span class="chip due-warn">D-2</span>
+          <span class="chip kpi">KPI · 재고최적화</span>
+        </div>
+        <div class="progress"><i style="width:90%"></i></div>
+      </div>
+    </div>
+
+    <div class="kanban-col">
+      <div class="kanban-head">
+        <strong>일반 진행</strong>
+        <span class="cnt">4건</span>
+      </div>
+      <div class="kanban-card">
+        <div class="title">신규 입점 브랜드 미팅</div>
+        <div class="row">
+          <span class="chip status-doing">진행</span>
+          <span class="chip due-warn">D-3</span>
+          <span class="chip kpi">KPI · 신규소싱</span>
+        </div>
+        <div class="progress"><i style="width:40%"></i></div>
+      </div>
+      <div class="kanban-card">
+        <div class="title">월간 부서 KPI 리뷰 준비</div>
+        <div class="row">
+          <span class="chip status-doing">진행</span>
+          <span class="chip due-ok">D-5</span>
+        </div>
+        <div class="progress"><i style="width:25%"></i></div>
+      </div>
+      <div class="kanban-card">
+        <div class="title">상품 페이지 카피 검수</div>
+        <div class="row">
+          <span class="chip status-doing">진행</span>
+          <span class="chip due-ok">D-4</span>
+        </div>
+        <div class="progress"><i style="width:60%"></i></div>
+      </div>
+      <div class="kanban-card">
+        <div class="title">신규 멤버 온보딩 자료 정리</div>
+        <div class="row">
+          <span class="chip status-todo">대기</span>
+          <span class="chip due-ok">D-6</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="kanban-col">
+      <div class="kanban-head">
+        <strong>대기 · 검토</strong>
+        <span class="cnt">3건</span>
+      </div>
+      <div class="kanban-card">
+        <div class="title">파트너사 견적 비교</div>
+        <div class="row">
+          <span class="chip status-todo">대기</span>
+          <span class="chip due-ok">D-7</span>
+        </div>
+      </div>
+      <div class="kanban-card">
+        <div class="title">하반기 워크숍 장소 결정</div>
+        <div class="row">
+          <span class="chip status-blocked">막힘</span>
+          <span class="chip due-warn">D-2</span>
+        </div>
+      </div>
+      <div class="kanban-card">
+        <div class="title">디자인팀 협업 요청 회신</div>
+        <div class="row">
+          <span class="chip status-review">검토</span>
+          <span class="chip due-ok">D-8</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B. 우선순위 그룹 압축 리스트 -->
+  <div class="layout-head">
+    <h3>레이아웃 B — 우선순위 그룹 압축 리스트 (한 줄 row)</h3>
+    <small>· 정보 밀도 ↑, 한 화면에 9~10건 표시 가능</small>
+    <span class="pill" style="background:#3b82f6">2순위</span>
+  </div>
+  <div class="compact-list">
+    <div class="compact-group-head focus">★ 우선순위 업무 (2건)</div>
+    <div class="compact-row focus">
+      <div class="pri-bar"></div>
+      <div><span class="title">2분기 본부장 보고 자료 초안</span></div>
+      <div class="meta-chips">
+        <span class="chip kpi">매출</span>
+        <span class="chip status-doing">진행</span>
+      </div>
+      <span class="chip due-danger">D-1</span>
+      <div class="progress-mini"><i style="width:70%"></i></div>
+      <span style="color:var(--muted);font-size:11px">70%</span>
+    </div>
+    <div class="compact-row focus">
+      <div class="pri-bar"></div>
+      <div><span class="title">SKU 재고 분석 보고서</span></div>
+      <div class="meta-chips">
+        <span class="chip kpi">재고최적화</span>
+        <span class="chip status-review">검토</span>
+      </div>
+      <span class="chip due-warn">D-2</span>
+      <div class="progress-mini"><i style="width:90%"></i></div>
+      <span style="color:var(--muted);font-size:11px">90%</span>
+    </div>
+
+    <div class="compact-group-head">일반 진행 (4건)</div>
+    <div class="compact-row normal">
+      <div class="pri-bar"></div>
+      <div><span class="title">신규 입점 브랜드 미팅</span></div>
+      <div class="meta-chips">
+        <span class="chip kpi">신규소싱</span>
+        <span class="chip status-doing">진행</span>
+      </div>
+      <span class="chip due-warn">D-3</span>
+      <div class="progress-mini"><i style="width:40%"></i></div>
+      <span style="color:var(--muted);font-size:11px">40%</span>
+    </div>
+    <div class="compact-row normal">
+      <div class="pri-bar"></div>
+      <div><span class="title">월간 부서 KPI 리뷰 준비</span></div>
+      <div class="meta-chips">
+        <span class="chip status-doing">진행</span>
+      </div>
+      <span class="chip due-ok">D-5</span>
+      <div class="progress-mini"><i style="width:25%"></i></div>
+      <span style="color:var(--muted);font-size:11px">25%</span>
+    </div>
+    <div class="compact-row normal">
+      <div class="pri-bar"></div>
+      <div><span class="title">상품 페이지 카피 검수</span></div>
+      <div class="meta-chips">
+        <span class="chip status-doing">진행</span>
+      </div>
+      <span class="chip due-ok">D-4</span>
+      <div class="progress-mini"><i style="width:60%"></i></div>
+      <span style="color:var(--muted);font-size:11px">60%</span>
+    </div>
+    <div class="compact-row normal">
+      <div class="pri-bar"></div>
+      <div><span class="title">신규 멤버 온보딩 자료 정리</span></div>
+      <div class="meta-chips">
+        <span class="chip status-todo">대기</span>
+      </div>
+      <span class="chip due-ok">D-6</span>
+      <div class="progress-mini"><i style="width:0%"></i></div>
+      <span style="color:var(--muted);font-size:11px">0%</span>
+    </div>
+
+    <div class="compact-group-head">대기 · 검토 (3건)</div>
+    <div class="compact-row standby">
+      <div class="pri-bar"></div>
+      <div><span class="title">파트너사 견적 비교</span></div>
+      <div class="meta-chips">
+        <span class="chip status-todo">대기</span>
+      </div>
+      <span class="chip due-ok">D-7</span>
+      <div class="progress-mini"><i style="width:0%"></i></div>
+      <span style="color:var(--muted);font-size:11px">0%</span>
+    </div>
+    <div class="compact-row standby">
+      <div class="pri-bar"></div>
+      <div><span class="title">하반기 워크숍 장소 결정</span></div>
+      <div class="meta-chips">
+        <span class="chip status-blocked">막힘</span>
+      </div>
+      <span class="chip due-warn">D-2</span>
+      <div class="progress-mini"><i style="width:30%"></i></div>
+      <span style="color:var(--muted);font-size:11px">30%</span>
+    </div>
+    <div class="compact-row standby">
+      <div class="pri-bar"></div>
+      <div><span class="title">디자인팀 협업 요청 회신</span></div>
+      <div class="meta-chips">
+        <span class="chip status-review">검토</span>
+      </div>
+      <span class="chip due-ok">D-8</span>
+      <div class="progress-mini"><i style="width:50%"></i></div>
+      <span style="color:var(--muted);font-size:11px">50%</span>
+    </div>
+  </div>
+
+  <!-- C. 매트릭스 -->
+  <div class="layout-head">
+    <h3>레이아웃 C — 4사분면 매트릭스 (우선도 × 마감)</h3>
+    <small>· 의사결정 도구 (Eisenhower 스타일), 반대로 학습 비용 ↑</small>
+    <span class="pill" style="background:#9333ea">3순위</span>
+  </div>
+  <div class="matrix">
+    <div class="mtx-axis-x">← 마감 임박  ·  마감 여유 →</div>
+    <div class="mtx-axis-y">우선도 ↑</div>
+
+    <div class="mtx-cell urgent-important">
+      <h4>긴급+우선 <small>2건</small></h4>
+      <ul>
+        <li>★ 2분기 본부장 보고 자료 (D-1, 70%)</li>
+        <li>★ SKU 재고 분석 보고서 (D-2, 90%)</li>
+      </ul>
+    </div>
+    <div class="mtx-cell long-important">
+      <h4>여유+우선 <small>0건</small></h4>
+      <ul style="color:var(--muted)"><li>해당 업무 없음</li></ul>
+    </div>
+
+    <div class="mtx-cell urgent-normal">
+      <h4>긴급+일반 <small>3건</small></h4>
+      <ul>
+        <li>신규 입점 브랜드 미팅 (D-3)</li>
+        <li>상품 페이지 카피 검수 (D-4)</li>
+        <li>하반기 워크숍 장소 결정 (D-2, 막힘)</li>
+      </ul>
+    </div>
+    <div class="mtx-cell long-normal">
+      <h4>여유+일반 <small>4건</small></h4>
+      <ul>
+        <li>월간 부서 KPI 리뷰 준비 (D-5)</li>
+        <li>신규 멤버 온보딩 자료 (D-6)</li>
+        <li>파트너사 견적 비교 (D-7)</li>
+        <li>디자인팀 협업 요청 회신 (D-8)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="recommend">
+    <strong>추천 — A안 (우선순위 칸반)</strong><br>
+    이유: ① 시각적 좌→우 흐름이 직관적, ② 카드별 정보(상태/마감/KPI/진행률)가 모두 보임, ③ 칼럼 헤더의 건수로 "어디가 막혔는지" 즉시 인지, ④ 모바일에서도 세로로 재배치하기 쉬움.
+    B안은 정보 밀도가 가장 높지만 카드가 작아 카피 검수처럼 디테일 확인이 필요한 업무에는 불리.
+  </div>
+</section>
+
+<!-- =================== 2. 개인 부담도 신호 =================== -->
+<section class="block">
+  <h2><span class="priority-badge priority-2">2순위</span> 개인 부담도 신호 (부서별 워크로드 → 팀원 드릴다운)</h2>
+  <p class="lead">
+    부서 카드 클릭 → 그 부서 팀원 리스트가 우측에 펼쳐짐. 한 사람의 지연 task ≥ 3건이면 빨간 알림 + 본부장에게 푸시. 이름 클릭 → 그 팀원의 task 전체 펼침.
+  </p>
+
+  <div class="load-grid">
+    <!-- 부서별 카드 (왼쪽) -->
+    <div>
+      <div class="dept-card warn active">
+        <div class="head">
+          <strong>커머스 1팀</strong>
+          <span class="num">14건</span>
+        </div>
+        <div class="bar"><i class="over" style="width:90%"></i></div>
+        <div class="alert">⚠ 김지수 지연 4건 — 본부장 알림</div>
+      </div>
+      <div class="dept-card">
+        <div class="head">
+          <strong>커머스 2팀</strong>
+          <span class="num">10건</span>
+        </div>
+        <div class="bar"><i style="width:65%"></i></div>
+      </div>
+      <div class="dept-card warn">
+        <div class="head">
+          <strong>마케팅</strong>
+          <span class="num">12건</span>
+        </div>
+        <div class="bar"><i class="over" style="width:80%"></i></div>
+        <div class="alert">⚠ 박서영 지연 3건 — 본부장 알림</div>
+      </div>
+      <div class="dept-card">
+        <div class="head">
+          <strong>운영</strong>
+          <span class="num">7건</span>
+        </div>
+        <div class="bar"><i style="width:45%"></i></div>
+      </div>
+      <div class="dept-card">
+        <div class="head">
+          <strong>전략기획</strong>
+          <span class="num">5건</span>
+        </div>
+        <div class="bar"><i style="width:30%"></i></div>
+      </div>
+    </div>
+
+    <!-- 멤버 (오른쪽) -->
+    <div class="member-pane">
+      <h3>커머스 1팀 — 팀원 부담도</h3>
+
+      <div class="member-row alert">
+        <div class="name">김지수 <span class="badge-alert">알림</span></div>
+        <div class="stack">
+          <span class="chip kpi">매출</span>
+          <span class="chip kpi">신규소싱</span>
+        </div>
+        <div class="stat delay"><strong>4</strong>지연</div>
+        <div class="stat"><strong>6</strong>총 task</div>
+      </div>
+      <div class="member-tasks">
+        <div class="task-line delay"><span>2분기 본부장 보고 자료 초안</span><span class="chip due-danger">D-1 지연 5일</span></div>
+        <div class="task-line delay"><span>신규 입점 브랜드 미팅</span><span class="chip due-warn">D-3 지연 2일</span></div>
+        <div class="task-line delay"><span>SKU 재고 분석</span><span class="chip due-warn">막힘 4일</span></div>
+        <div class="task-line delay"><span>상품 페이지 카피 검수</span><span class="chip due-warn">정체 3일</span></div>
+        <div class="task-line"><span>월간 KPI 리뷰 준비</span><span class="chip status-doing">진행</span></div>
+        <div class="task-line"><span>워크숍 장소 결정</span><span class="chip status-todo">대기</span></div>
+      </div>
+
+      <div class="member-row">
+        <div class="name">이민호</div>
+        <div class="stack">
+          <span class="chip kpi">재고최적화</span>
+        </div>
+        <div class="stat"><strong>1</strong>지연</div>
+        <div class="stat"><strong>4</strong>총 task</div>
+      </div>
+      <div class="member-row">
+        <div class="name">정혜원</div>
+        <div class="stack">
+          <span class="chip kpi">파트너관리</span>
+        </div>
+        <div class="stat"><strong>0</strong>지연</div>
+        <div class="stat"><strong>3</strong>총 task</div>
+      </div>
+      <div class="member-row">
+        <div class="name">최예나</div>
+        <div class="stack">
+          <span class="chip kpi">매출</span>
+        </div>
+        <div class="stat"><strong>0</strong>지연</div>
+        <div class="stat"><strong>1</strong>총 task</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="recommend">
+    <strong>핵심 로직</strong><br>
+    · 임계값(기본 3건) 본부장 권한으로 조정 가능 / · 알림 톤은 ⚠ 노랑(=3) → 🚨 빨강(≥5) 2단계 / · 알림은 1주일에 1회만 — 같은 인원이 매일 알림 받지 않도록 dedupe / · 인력 재배치 제안은 "여유 인원"(지연 0건이고 총 task ≤ 평균 50%)을 함께 표시.
+  </div>
+</section>
+
+<!-- =================== 3. 주간 자동 회고 =================== -->
+<section class="block">
+  <h2><span class="priority-badge priority-3">3순위</span> 주간 자동 회고 (매주 금 17:00 자동 생성)</h2>
+  <p class="lead">
+    Cloud Function + 스케줄러가 매주 금요일 17시에 자동 실행. 결과 카드는 홈 상단에 "이번 주 회고" 영역으로 7일간 노출. Gemini 인사이트 한 단락 포함.
+  </p>
+
+  <div class="retro-wrap">
+    <div class="retro-head">
+      <h3>📅 2026년 5월 1주차 회고 — 4/27(월) ~ 5/3(일)</h3>
+      <span class="auto-tag">금요일 17:00 자동 생성</span>
+    </div>
+    <div class="retro-body">
+      <div class="retro-stats">
+        <div class="retro-stat info">
+          <div class="n">23</div>
+          <div class="label">완료</div>
+        </div>
+        <div class="retro-stat warn">
+          <div class="n">7</div>
+          <div class="label">지연</div>
+        </div>
+        <div class="retro-stat">
+          <div class="n">11</div>
+          <div class="label">신규</div>
+        </div>
+        <div class="retro-stat">
+          <div class="n">76%</div>
+          <div class="label">전체 진척률</div>
+        </div>
+      </div>
+
+      <strong style="display:block;margin:6px 0 8px;font-size:13px">부서별 진척률</strong>
+      <div class="retro-bars">
+        <div class="retro-bar"><span class="label">커머스 1팀</span><div class="track"><i style="width:62%"></i></div><span class="pct">62%</span></div>
+        <div class="retro-bar"><span class="label">커머스 2팀</span><div class="track"><i style="width:88%"></i></div><span class="pct">88%</span></div>
+        <div class="retro-bar"><span class="label">마케팅</span><div class="track"><i style="width:55%;background:var(--warn)"></i></div><span class="pct" style="color:var(--warn-strong)">55%</span></div>
+        <div class="retro-bar"><span class="label">운영</span><div class="track"><i style="width:91%"></i></div><span class="pct">91%</span></div>
+      </div>
+
+      <strong style="display:block;margin:6px 0 8px;font-size:13px">KPI별 진척률 (Top 4)</strong>
+      <div class="retro-bars">
+        <div class="retro-bar"><span class="label">매출</span><div class="track"><i style="width:80%"></i></div><span class="pct">80%</span></div>
+        <div class="retro-bar"><span class="label">신규소싱</span><div class="track"><i style="width:45%;background:var(--warn)"></i></div><span class="pct" style="color:var(--warn-strong)">45%</span></div>
+        <div class="retro-bar"><span class="label">재고최적화</span><div class="track"><i style="width:72%"></i></div><span class="pct">72%</span></div>
+        <div class="retro-bar"><span class="label">파트너관리</span><div class="track"><i style="width:90%"></i></div><span class="pct">90%</span></div>
+      </div>
+
+      <div class="retro-insight">
+        <strong>🤖 Gemini 인사이트:</strong>
+        이번 주 커머스 1팀의 지연 비율이 평소 대비 +18% 증가했습니다. 김지수 담당의 "매출" 관련 task 4건이 동시에 D-1 안으로 몰린 것이 원인으로 보입니다.
+        다음 주는 신규소싱 KPI(45%)에 인력을 추가 배치하거나, 일정 분산을 검토해보세요.
+      </div>
+
+      <div class="retro-carryover">
+        <strong>🔄 다음 주 carry-over (자동 이월 후보)</strong>
+        <ul>
+          <li>SKU 재고 분석 보고서 — 검토 90% (커머스 1팀 / 김지수)</li>
+          <li>하반기 워크숍 장소 결정 — 막힘 (운영 / 박지민)</li>
+          <li>파트너사 견적 비교 — 대기 0% (커머스 2팀 / 한도현)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="recommend">
+    <strong>구현 메모</strong><br>
+    · 트리거: Cloud Functions Scheduler (Friday 17:00 KST) / · 데이터 수집: 해당 weekKey의 모든 팀원 task 집계 / · Gemini 호출: 한 번 / 부서별 통계를 prompt에 포함 / · 결과 저장: weeklyRetro/{weekKey} 컬렉션 / · 홈 노출: 새 회고가 있으면 상단 카드, 7일 후 history 메뉴로 이동.
+  </div>
+</section>
+
+<!-- =================== 4. 점검신호 + 코멘트인박스 좌우 분할 =================== -->
+<section class="block">
+  <h2><span class="priority-badge priority-2">2순위</span> 점검신호 + 코멘트 답변 인박스 — 좌우 반반 + 진행중 탭 추가</h2>
+  <p class="lead">
+    현재는 점검신호 1줄 차지. 인박스도 별도 줄 차지. 좌우로 묶으면 한 화면에 다 들어옴. 점검신호의 "진행중 업무"를 가장 왼쪽 탭으로 추가 (지연 신호와 함께 보면서 정상 진행 흐름도 인지).
+  </p>
+
+  <div class="split-grid">
+    <!-- 좌: 점검 신호 -->
+    <div class="split-col">
+      <h3>🚨 점검 신호</h3>
+      <div class="signal-tabs">
+        <div class="signal-tab info active">진행중 <span class="cnt">8</span></div>
+        <div class="signal-tab danger">지연 <span class="cnt">5</span></div>
+        <div class="signal-tab warn">결재 대기 <span class="cnt">3</span></div>
+        <div class="signal-tab ok">완료 (이번 주) <span class="cnt">12</span></div>
+      </div>
+
+      <div class="signal-row">
+        <div class="who">김지수</div>
+        <div><strong>2분기 본부장 보고 자료 초안</strong><br><small>매출 KPI · 진행 70%</small></div>
+        <span class="chip status-doing">진행</span>
+      </div>
+      <div class="signal-row">
+        <div class="who">이민호</div>
+        <div><strong>SKU 재고 분석</strong><br><small>재고최적화 KPI · 검토 90%</small></div>
+        <span class="chip status-review">검토</span>
+      </div>
+      <div class="signal-row">
+        <div class="who">정혜원</div>
+        <div><strong>파트너사 견적 비교</strong><br><small>파트너관리 KPI · 진행 50%</small></div>
+        <span class="chip status-doing">진행</span>
+      </div>
+      <div class="signal-row">
+        <div class="who">박서영</div>
+        <div><strong>월간 부서 KPI 리뷰 준비</strong><br><small>마케팅 / 진행 25%</small></div>
+        <span class="chip status-doing">진행</span>
+      </div>
+      <div class="signal-row">
+        <div class="who">최예나</div>
+        <div><strong>상품 페이지 카피 검수</strong><br><small>마케팅 / 진행 60%</small></div>
+        <span class="chip status-doing">진행</span>
+      </div>
+    </div>
+
+    <!-- 우: 코멘트 답변 인박스 -->
+    <div class="split-col">
+      <h3>💬 본부장 코멘트 답변 인박스 <small style="color:var(--muted);font-size:11px;font-weight:400">— 미답변 4건</small></h3>
+
+      <div class="inbox-row">
+        <div class="avatar">김</div>
+        <div class="text">
+          <strong>김지수 — SKU 재고 분석</strong>
+          <small>2일 전 본부장 코멘트</small>
+          <div class="quote">"4월 둘째 주 데이터까지 포함해서 다시 정리할 수 있을까? 그래프 단위가 안 맞는 것 같아."</div>
+        </div>
+      </div>
+      <div class="inbox-row">
+        <div class="avatar">박</div>
+        <div class="text">
+          <strong>박서영 — 신규 캠페인 기획</strong>
+          <small>1일 전 본부장 코멘트</small>
+          <div class="quote">"경쟁사 가격 비교 표가 빠진 것 같은데, 추가해서 다음 주 월요일까지 공유 부탁."</div>
+        </div>
+      </div>
+      <div class="inbox-row">
+        <div class="avatar">정</div>
+        <div class="text">
+          <strong>정혜원 — 파트너 미팅 정리</strong>
+          <small>3시간 전 본부장 코멘트</small>
+          <div class="quote">"미팅에서 결정된 사항과 후속 액션을 표로 분리해서 다시 올려줘."</div>
+        </div>
+      </div>
+      <div class="inbox-row">
+        <div class="avatar">이</div>
+        <div class="text">
+          <strong>이민호 — 분기 손익 보고</strong>
+          <small>오늘 오전 본부장 코멘트</small>
+          <div class="quote">"전월 대비 증감 항목 강조해줄 수 있을까? 색깔로라도."</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="recommend">
+    <strong>레이아웃 변경 효과</strong><br>
+    · 한 화면에 "신호"와 "할 일"이 같이 보임 → 본부장이 회의 중에 점검 가능 / · 진행중 탭이 가장 왼쪽 = 정상 흐름이 디폴트 노출, 빨간 신호(지연/결재대기)는 옆 탭에 / · 코멘트 인박스에 미답변 카운트 표시 → 답변 누락 방지.
+  </div>
+</section>
+
+</main>
+</body>
+</html>

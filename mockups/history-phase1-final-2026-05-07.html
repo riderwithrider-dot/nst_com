@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>완료 히스토리 1차 단기 — 통합 완성판</title>
+<style>
+  :root {
+    --line: #e3e8e5;
+    --line-strong: #cfd6d2;
+    --ink: #18211d;
+    --ink-soft: #4d5b54;
+    --muted: #7a857f;
+    --accent: #0d7a6e;
+    --accent-soft: #e6f4f1;
+    --warn: #f59e0b;
+    --warn-soft: #fef3c7;
+    --warn-strong: #b45309;
+    --info: #3b82f6;
+    --info-soft: #dbeafe;
+    --danger: #ef4444;
+    --ok: #10b981;
+    --ok-soft: #d1fae5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #f5f7f6;
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    font-size: 13px;
+    line-height: 1.55;
+    padding: 32px 28px;
+  }
+  header.page {
+    margin-bottom: 22px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  header.page h1 { margin: 0 0 4px; font-size: 21px; }
+  header.page p { margin: 0; color: var(--muted); }
+
+  /* ============ 주차 그룹 ============ */
+  .week-group {
+    background: white;
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--accent);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 14px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  }
+  .week-summary {
+    padding: 12px 18px;
+    background: linear-gradient(90deg, rgba(13, 122, 110, 0.08), transparent);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 14px;
+  }
+  .week-summary .toggle { color: var(--accent); margin-right: 8px; }
+  .week-summary .cnt {
+    background: white;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: 11.5px;
+    color: var(--accent);
+  }
+  .week-body { padding: 12px 16px; }
+
+  /* ============ 히스토리 카드 (1차 통합) ============ */
+  .history-card {
+    background: white;
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--ok);
+    border-radius: 10px;
+    margin-bottom: 12px;
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .history-card:hover {
+    border-color: rgba(13, 122, 110, 0.4);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+  }
+  .history-card.expanded {
+    cursor: default;
+    box-shadow: 0 4px 12px rgba(13, 122, 110, 0.1);
+    border-color: rgba(13, 122, 110, 0.5);
+  }
+
+  /* === ① 요약 헤더 (항상 보임) === */
+  .card-head {
+    padding: 12px 16px;
+  }
+  .head-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+  .head-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .head-subtitle {
+    color: var(--muted);
+    font-size: 11.5px;
+  }
+  .done-stamp {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 9px;
+    background: var(--ok-soft);
+    color: #065f46;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .head-detail {
+    margin: 6px 0 8px;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    line-height: 1.5;
+  }
+
+  .summary-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--line);
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    background: #f9fbfa;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 11.5px;
+    color: var(--ink-soft);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .chip .num { color: var(--accent); font-weight: 700; }
+  .chip.kpi { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .chip.duration { background: var(--info-soft); color: #1e3a8a; border-color: var(--info); }
+  .chip .num.warn { color: var(--warn-strong); }
+
+  /* === ② 타임라인 === */
+  .timeline-section {
+    padding: 14px 16px 10px;
+    border-top: 1px solid var(--line);
+    background: linear-gradient(to right, rgba(13, 122, 110, 0.04), white, rgba(16, 185, 129, 0.05));
+  }
+  .timeline-title {
+    font-size: 11.5px;
+    color: var(--muted);
+    margin-bottom: 8px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+  }
+  .timeline-track {
+    position: relative;
+    height: 50px;
+    margin: 0 16px;
+  }
+  .timeline-line {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(to right, var(--accent) 0%, var(--info) 50%, var(--ok) 100%);
+    transform: translateY(-50%);
+    border-radius: 2px;
+  }
+  .timeline-dot {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: white;
+    border: 3px solid var(--info);
+    cursor: pointer;
+    transition: transform 0.12s;
+  }
+  .timeline-dot:hover {
+    transform: translate(-50%, -50%) scale(1.3);
+    z-index: 3;
+  }
+  .timeline-dot.start {
+    border-color: var(--accent);
+    background: var(--accent);
+  }
+  .timeline-dot.end {
+    border-color: var(--ok);
+    background: var(--ok);
+  }
+  .timeline-dot.comment {
+    border-color: var(--warn);
+    background: var(--warn);
+    width: 11px;
+    height: 11px;
+  }
+  .timeline-label {
+    position: absolute;
+    top: calc(50% + 14px);
+    transform: translateX(-50%);
+    font-size: 10.5px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .timeline-label.start { color: var(--accent); font-weight: 700; }
+  .timeline-label.end { color: var(--ok); font-weight: 700; }
+  .timeline-dot::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--ink);
+    color: white;
+    padding: 6px 11px;
+    border-radius: 6px;
+    font-size: 11px;
+    white-space: pre-wrap;
+    width: max-content;
+    max-width: 220px;
+    text-align: left;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+    z-index: 10;
+    line-height: 1.45;
+    font-weight: 400;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  }
+  .timeline-dot:hover::after { opacity: 1; }
+  .timeline-legend {
+    display: flex;
+    justify-content: center;
+    gap: 14px;
+    font-size: 10.5px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+  .legend-dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    margin-right: 3px;
+    vertical-align: middle;
+  }
+  .lg-start { background: var(--accent); }
+  .lg-progress { background: var(--info); }
+  .lg-comment { background: var(--warn); }
+  .lg-end { background: var(--ok); }
+
+  /* === ③ 본문 확장 (펼침) === */
+  .expanded-body {
+    border-top: 1px solid var(--line);
+    padding: 16px;
+    background: #fafbfa;
+  }
+  .section-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--ink);
+    margin-bottom: 10px;
+  }
+  .section-head .ico {
+    font-size: 13px;
+  }
+  .section-head .cnt {
+    background: var(--accent-soft);
+    color: var(--accent);
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    margin-left: 4px;
+  }
+
+  /* 진행로그 — 게시글 형태 (article style) */
+  .progress-feed {
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 4px 14px;
+    margin-bottom: 16px;
+  }
+  .progress-post {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    gap: 12px;
+  }
+  .progress-post:last-child { border-bottom: none; }
+
+  .progress-post .post-meta {
+    flex: 0 0 90px;
+    text-align: right;
+    font-size: 11px;
+    color: var(--muted);
+    padding-top: 1px;
+    line-height: 1.4;
+  }
+  .progress-post .post-meta .date {
+    font-weight: 700;
+    color: var(--ink-soft);
+    display: block;
+  }
+  .progress-post .post-meta .time {
+    font-size: 10.5px;
+    color: var(--muted);
+  }
+  .progress-post .post-meta .author {
+    font-size: 10.5px;
+    color: var(--muted);
+    display: block;
+    margin-top: 2px;
+  }
+
+  .progress-post .post-body {
+    flex: 1;
+    min-width: 0;
+    border-left: 2px solid var(--info);
+    padding-left: 14px;
+    position: relative;
+  }
+  .progress-post .post-body::before {
+    content: '';
+    position: absolute;
+    left: -7px;
+    top: 4px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--info);
+    border: 3px solid white;
+    box-shadow: 0 0 0 1px var(--info);
+  }
+  .progress-post .post-text {
+    margin: 0 0 8px;
+    font-size: 13px;
+    color: var(--ink);
+    line-height: 1.6;
+    white-space: pre-wrap;
+  }
+  .progress-post .post-thumbs {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .progress-post .post-thumb {
+    width: 64px;
+    height: 64px;
+    background: linear-gradient(135deg, #cbd5d2, #9ca3af);
+    border-radius: 6px;
+    border: 1px solid var(--line-strong);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.1s;
+  }
+  .progress-post .post-thumb:hover { transform: scale(1.05); border-color: var(--accent); }
+
+  /* 코멘트 카카오톡 풍선 */
+  .chat-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .chat-bubble {
+    max-width: 70%;
+    padding: 7px 12px;
+    border-radius: 14px;
+    font-size: 12.5px;
+  }
+  .chat-bubble .bubble-head {
+    font-size: 10.5px;
+    color: var(--muted);
+    margin-bottom: 2px;
+  }
+  .chat-bubble .bubble-head strong {
+    font-size: 11px;
+    color: var(--ink);
+    margin-right: 6px;
+    font-weight: 700;
+  }
+  .chat-bubble.is-mine {
+    align-self: flex-end;
+    background: #fef9c3;
+    border: 1px solid #fbbf24;
+    border-radius: 14px 14px 4px 14px;
+  }
+  .chat-bubble.is-other {
+    align-self: flex-start;
+    background: transparent;
+    border: 1px dashed #9ca3af;
+    border-radius: 14px 14px 14px 4px;
+  }
+  .chat-bubble p { margin: 0; line-height: 1.5; white-space: pre-wrap; }
+
+  /* 주석 박스 */
+  .note-box {
+    margin: 24px 0 12px;
+    padding: 12px 16px;
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    font-size: 12.5px;
+    line-height: 1.6;
+  }
+  .note-box strong { color: var(--accent); }
+  .note-box ul { margin: 6px 0 0; padding-left: 22px; }
+</style>
+</head>
+<body>
+
+<header class="page">
+  <h1>📋 완료 업무 히스토리 — 1차 단기 통합 완성판</h1>
+  <p>① 요약 헤더 + ② 가로 타임라인 + ③ 본문 확장(진행로그 게시글형 + 코멘트 카톡형) — 한 카드에 모두 통합</p>
+</header>
+
+<!-- ============ 주차 그룹 (예시) ============ -->
+<div class="week-group">
+  <div class="week-summary">
+    <span><span class="toggle">▼</span> 2026년 4/27 ~ 5/3 (5월 1주차)</span>
+    <span class="cnt">2건 완료</span>
+  </div>
+  <div class="week-body">
+
+    <!-- ============ 카드 1 — 펼침 상태 (전체 흐름) ============ -->
+    <article class="history-card expanded">
+      <!-- ① 요약 헤더 -->
+      <div class="card-head">
+        <div class="head-top">
+          <div>
+            <div class="head-title">홈쇼핑업무 — 현대홈쇼핑 신상품제안</div>
+            <div class="head-subtitle">시작 2026.04.28 (월) · 완료 2026.05.06 (수)</div>
+          </div>
+          <span class="done-stamp">✓ 완료</span>
+        </div>
+        <p class="head-detail">현대홈쇼핑 신상품 5종 입점 제안 및 가격 협상. MD 미팅 거쳐 계약 체결 단계까지.</p>
+        <div class="summary-chips">
+          <span class="chip kpi">▣ 매출 KPI</span>
+          <span class="chip duration">⏱ 작업 <span class="num" style="color:#1e3a8a">9일</span></span>
+          <span class="chip">📈 진행로그 <span class="num">5</span></span>
+          <span class="chip">💬 코멘트 <span class="num">3</span></span>
+          <span class="chip">📎 첨부 <span class="num">2</span></span>
+          <span class="chip">🔗 이전업무 <span class="num">1</span></span>
+        </div>
+      </div>
+
+      <!-- ② 가로 타임라인 -->
+      <div class="timeline-section">
+        <div class="timeline-title">🕐 작업 흐름 타임라인</div>
+        <div class="timeline-track">
+          <div class="timeline-line"></div>
+          <div class="timeline-dot start" style="left:0%" data-tip="📅 시작&#10;4/28 (월) 10:00"></div>
+          <div class="timeline-label start" style="left:0%">4/28 시작</div>
+
+          <div class="timeline-dot" style="left:14%" data-tip="📈 진행로그 #1&#10;4/28 14:30&#10;신상품 라인업 정리 완료"></div>
+          <div class="timeline-dot comment" style="left:20%" data-tip="💬 본부장&#10;4/28 16:15&#10;가격대 검토 필요"></div>
+
+          <div class="timeline-dot" style="left:32%" data-tip="📈 진행로그 #2&#10;4/30 09:20&#10;가격대 시뮬 3안 (📎 1)"></div>
+
+          <div class="timeline-dot" style="left:48%" data-tip="📈 진행로그 #3&#10;5/2 11:00&#10;현대홈쇼핑 1차 미팅"></div>
+          <div class="timeline-dot comment" style="left:54%" data-tip="💬 김지수&#10;5/2 14:30&#10;MD 피드백 반영했습니다"></div>
+
+          <div class="timeline-dot" style="left:70%" data-tip="📈 진행로그 #4&#10;5/4 16:00&#10;제안서 PDF 발송 (📎 1)"></div>
+
+          <div class="timeline-dot" style="left:84%" data-tip="📈 진행로그 #5&#10;5/5 10:00&#10;계약 조건 확정"></div>
+          <div class="timeline-dot comment" style="left:90%" data-tip="💬 본부장&#10;5/6 09:00&#10;수고하셨습니다"></div>
+
+          <div class="timeline-dot end" style="left:100%" data-tip="✓ 완료&#10;5/6 (수) 17:30"></div>
+          <div class="timeline-label end" style="left:100%">5/6 완료</div>
+        </div>
+        <div class="timeline-legend">
+          <span><span class="legend-dot lg-start"></span>시작</span>
+          <span><span class="legend-dot lg-progress"></span>진행로그</span>
+          <span><span class="legend-dot lg-comment"></span>코멘트</span>
+          <span><span class="legend-dot lg-end"></span>완료</span>
+        </div>
+      </div>
+
+      <!-- ③ 본문 확장 -->
+      <div class="expanded-body">
+        <!-- 진행로그 게시글형 -->
+        <div class="section-head">
+          <span class="ico">📈</span> 진행로그
+          <span class="cnt">5건</span>
+        </div>
+        <div class="progress-feed">
+          <div class="progress-post">
+            <div class="post-meta">
+              <span class="date">4/28 (월)</span>
+              <span class="time">14:30</span>
+              <span class="author">관리자</span>
+            </div>
+            <div class="post-body">
+              <p class="post-text">신상품 라인업 정리 완료. 메인 5종 + 서브 3종으로 구성.
+- 메인: 폴리페놀 효소 / 콜라겐 / 프로바이오틱스 등
+- 서브: 단품 옵션 3종</p>
+            </div>
+          </div>
+
+          <div class="progress-post">
+            <div class="post-meta">
+              <span class="date">4/30 (수)</span>
+              <span class="time">09:20</span>
+              <span class="author">관리자</span>
+            </div>
+            <div class="post-body">
+              <p class="post-text">가격대 시뮬레이션 3안 완성. 본부장 피드백 후 1안 채택 예정.
+- 1안: 경쟁사 대비 -5% (마진 38%)
+- 2안: 동가 (마진 42%)
+- 3안: 프리미엄 +10% (마진 48%)</p>
+              <div class="post-thumbs">
+                <span class="post-thumb" title="가격시뮬.png">PNG</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="progress-post">
+            <div class="post-meta">
+              <span class="date">5/2 (금)</span>
+              <span class="time">11:00</span>
+              <span class="author">관리자</span>
+            </div>
+            <div class="post-body">
+              <p class="post-text">현대홈쇼핑 1차 미팅. MD 김OO과 카테고리 얼라인. 헬스 카테고리 슬롯 확보 가능성 높음.</p>
+            </div>
+          </div>
+
+          <div class="progress-post">
+            <div class="post-meta">
+              <span class="date">5/4 (일)</span>
+              <span class="time">16:00</span>
+              <span class="author">관리자</span>
+            </div>
+            <div class="post-body">
+              <p class="post-text">제안서 최종본 발송. PDF 32p (가격, 라인업, 마진율, 광고 플랜 포함).</p>
+              <div class="post-thumbs">
+                <span class="post-thumb" title="제안서.pdf">PDF</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="progress-post">
+            <div class="post-meta">
+              <span class="date">5/5 (월)</span>
+              <span class="time">10:00</span>
+              <span class="author">관리자</span>
+            </div>
+            <div class="post-body">
+              <p class="post-text">계약 조건 확정 — MOQ 5,000개 / 마진율 38% / 첫 방송 6/1 (예정).
+다음 단계: 발주 일정 조율 + 스튜디오 촬영 일정 확정</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 코멘트 카톡형 -->
+        <div class="section-head">
+          <span class="ico">💬</span> 코멘트
+          <span class="cnt">3건</span>
+        </div>
+        <div class="chat-list">
+          <div class="chat-bubble is-other">
+            <div class="bubble-head"><strong>본부장</strong>4/28 16:15</div>
+            <p>가격대 검토 필요. 경쟁사 대비 ±10% 안에서 3안 만들어주세요.</p>
+          </div>
+          <div class="chat-bubble is-mine">
+            <div class="bubble-head"><strong>김지수</strong>5/2 14:30</div>
+            <p>MD 피드백 반영했습니다. 카테고리 재구성 + 가격 1안으로 갑니다.</p>
+          </div>
+          <div class="chat-bubble is-other">
+            <div class="bubble-head"><strong>본부장</strong>5/6 09:00</div>
+            <p>수고하셨습니다. 다음 분기 라인업도 부탁드려요.</p>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- ============ 카드 2 — 닫힘 상태 (요약만 보임) ============ -->
+    <article class="history-card">
+      <div class="card-head">
+        <div class="head-top">
+          <div>
+            <div class="head-title">홈쇼핑 — 롯데홈쇼핑 신상품런칭</div>
+            <div class="head-subtitle">시작 2026.04.28 · 완료 2026.04.28 (당일)</div>
+          </div>
+          <span class="done-stamp">✓ 완료</span>
+        </div>
+        <p class="head-detail">신상품런칭 프로젝트 — 롯데홈쇼핑 라이브 슬롯 확정.</p>
+        <div class="summary-chips">
+          <span class="chip kpi">▣ 매출 KPI</span>
+          <span class="chip duration">⏱ 작업 <span class="num" style="color:#1e3a8a">당일</span></span>
+          <span class="chip">📈 진행로그 <span class="num">2</span></span>
+          <span class="chip">💬 코멘트 <span class="num">0</span></span>
+          <span class="chip">📎 첨부 <span class="num">0</span></span>
+        </div>
+        <p style="margin:8px 0 0;color:var(--muted);font-size:11px;font-style:italic">▷ 카드를 클릭하면 타임라인 + 진행로그 + 코멘트 펼쳐짐</p>
+      </div>
+    </article>
+
+  </div>
+</div>
+
+<!-- ============ 주석 박스 ============ -->
+<div class="note-box">
+  <strong>1차 단기 통합 — 핵심 변경점</strong>
+  <ul>
+    <li><strong>① 요약 헤더</strong>: 카드 닫힌 상태에서도 KPI · 작업기간 · 진행로그·코멘트·첨부 카운트 즉시 표시 (chip 형태)</li>
+    <li><strong>② 타임라인</strong>: 시작·진행로그(파랑)·코멘트(노랑)·완료(초록) 점으로 시각화. hover 시 그 시점 내용 미리보기</li>
+    <li><strong>③ 진행로그 게시글형</strong>: 좌측 날짜/시간/작성자 컬럼 + 파란 세로 띠 + 본문 + 첨부 썸네일. 카드 그리드 대신 게시글 피드로 깔끔히</li>
+    <li><strong>③ 코멘트 카톡형</strong>: 본인 = 노란 우측 풍선 / 타인 = 투명 점선 좌측 풍선 — 채팅 흐름 그대로 보존</li>
+    <li>주차 그룹 헤더: ▶/▼ 토글 + 건수 chip으로 시각 구분 강화 (이미 적용됨)</li>
+  </ul>
+</div>
+
+<script>
+  // 카드 클릭 → 펼침/접힘 토글 (데모용)
+  document.querySelectorAll('.history-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const isExpanded = card.classList.contains('expanded')
+      // 다른 카드들 닫기 (선택사항 — 한번에 하나만 펼침)
+      // 현재 카드 토글
+      card.classList.toggle('expanded')
+    })
+  })
+</script>
+
+</body>
+</html>

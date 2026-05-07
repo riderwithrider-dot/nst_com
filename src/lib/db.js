@@ -6,6 +6,7 @@ import {
 } from 'firebase/storage'
 import {
   collection,
+  collectionGroup,
   deleteDoc,
   doc,
   getDocs,
@@ -16,6 +17,7 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
   writeBatch,
 } from 'firebase/firestore'
 import { db, isFirebaseConfigured, storage } from './firebase'
@@ -200,6 +202,200 @@ export async function updateMemberSubteam(teamId, uid, subteam) {
     subteamLocked: true,
     updatedAt: serverTimestamp(),
   }, { merge: true })
+}
+
+// 특정 주차의 단일 task 업데이트 (history task의 KPI 변경 등에 사용)
+export async function updateTaskInWeek(teamId, uid, weekKey, taskId, patch) {
+  assertDb()
+  const ref = doc(db, 'teams', teamId, 'members', uid, 'weeks', weekKey)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) {
+    throw new Error(`주차(${weekKey}) 데이터가 없습니다.`)
+  }
+  const items = snap.data().items || []
+  const target = items.find(i => i.id === taskId)
+  if (!target) {
+    throw new Error(`업무(id=${taskId})를 ${weekKey} 주차에서 찾지 못했습니다.`)
+  }
+  const nextItems = items.map(item => {
+    if (item.id !== taskId) return item
+    return {
+      ...item,
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    }
+  })
+  await setDoc(ref, {
+    items: nextItems,
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
+}
+
+// === 공동 관리 (B안: 양방향 미러링) ===
+// 한 task를 여러 owner의 weeks에 추가 — 신규 공유 task 생성 또는 기존 task 신규 공유에 사용
+// task: 저장할 task 객체. coOwnerUids는 task에 이미 포함되어 있어야 함.
+export async function mirrorTaskToOwners(teamId, ownerUids, weekKey, task) {
+  assertDb()
+  if (!Array.isArray(ownerUids) || ownerUids.length === 0) return { mirrored: 0 }
+  const uniqueUids = Array.from(new Set(ownerUids.filter(Boolean)))
+  const batch = writeBatch(db)
+  for (const uid of uniqueUids) {
+    const ref = doc(db, 'teams', teamId, 'members', uid, 'weeks', weekKey)
+    const snap = await getDoc(ref)
+    const items = snap.exists() ? (snap.data().items || []) : []
+    const exists = items.some(i => i.id === task.id)
+    const nextItems = exists
+      ? items.map(i => i.id === task.id ? { ...i, ...task, updatedAt: new Date().toISOString() } : i)
+      : [...items, { ...task, updatedAt: task.updatedAt || new Date().toISOString() }]
+    batch.set(ref, { items: nextItems, updatedAt: serverTimestamp() }, { merge: true })
+  }
+  await batch.commit()
+  return { mirrored: uniqueUids.length }
+}
+
+// 공유 task에 patch 적용 — 모든 coOwner의 weeks에 동시 반영
+// patch는 부분 업데이트 (예: { status: 'doing' })
+export async function syncTaskPatchAcrossOwners(teamId, ownerUids, weekKey, taskId, patch) {
+  assertDb()
+  if (!Array.isArray(ownerUids) || ownerUids.length === 0) return { synced: 0 }
+  const uniqueUids = Array.from(new Set(ownerUids.filter(Boolean)))
+  const now = new Date().toISOString()
+  const batch = writeBatch(db)
+  let writes = 0
+  for (const uid of uniqueUids) {
+    const ref = doc(db, 'teams', teamId, 'members', uid, 'weeks', weekKey)
+    const snap = await getDoc(ref)
+    if (!snap.exists()) continue
+    const items = snap.data().items || []
+    if (!items.some(i => i.id === taskId)) continue
+    const nextItems = items.map(item => {
+      if (item.id !== taskId) return item
+      const nextStatus = patch.status || item.status
+      return {
+        ...item,
+        ...patch,
+        completedAt: nextStatus === 'done' ? (item.completedAt || now) : null,
+        updatedAt: now,
+      }
+    })
+    batch.set(ref, { items: nextItems, updatedAt: serverTimestamp() }, { merge: true })
+    writes += 1
+  }
+  if (writes > 0) await batch.commit()
+  return { synced: writes }
+}
+
+// 공유 task를 모든 coOwner의 weeks에서 제거 — 완전 삭제 (unshare가 아니라 task 삭제)
+export async function deleteTaskAcrossOwners(teamId, ownerUids, weekKey, taskId) {
+  assertDb()
+  if (!Array.isArray(ownerUids) || ownerUids.length === 0) return { deleted: 0 }
+  const uniqueUids = Array.from(new Set(ownerUids.filter(Boolean)))
+  const batch = writeBatch(db)
+  let writes = 0
+  for (const uid of uniqueUids) {
+    const ref = doc(db, 'teams', teamId, 'members', uid, 'weeks', weekKey)
+    const snap = await getDoc(ref)
+    if (!snap.exists()) continue
+    const items = snap.data().items || []
+    if (!items.some(i => i.id === taskId)) continue
+    const nextItems = items.filter(i => i.id !== taskId)
+    batch.set(ref, { items: nextItems, updatedAt: serverTimestamp() }, { merge: true })
+    writes += 1
+  }
+  if (writes > 0) await batch.commit()
+  return { deleted: writes }
+}
+
+// 한 owner를 공유에서 제외 — 그 owner의 weeks에서 task 제거 + 남은 owner들의 coOwnerUids 갱신
+export async function unshareTaskFromOwner(teamId, allOwnerUids, weekKey, taskId, removeUid) {
+  assertDb()
+  const remainOwners = (allOwnerUids || []).filter(u => u && u !== removeUid)
+  const batch = writeBatch(db)
+  // 1) 제거 대상 owner의 weeks에서 task 삭제
+  const removeRef = doc(db, 'teams', teamId, 'members', removeUid, 'weeks', weekKey)
+  const removeSnap = await getDoc(removeRef)
+  if (removeSnap.exists()) {
+    const items = removeSnap.data().items || []
+    const nextItems = items.filter(i => i.id !== taskId)
+    batch.set(removeRef, { items: nextItems, updatedAt: serverTimestamp() }, { merge: true })
+  }
+  // 2) 남은 owner들의 task에 coOwnerUids 갱신
+  for (const uid of remainOwners) {
+    const ref = doc(db, 'teams', teamId, 'members', uid, 'weeks', weekKey)
+    const snap = await getDoc(ref)
+    if (!snap.exists()) continue
+    const items = snap.data().items || []
+    if (!items.some(i => i.id === taskId)) continue
+    const nextItems = items.map(item => {
+      if (item.id !== taskId) return item
+      return {
+        ...item,
+        coOwnerUids: remainOwners,
+        updatedAt: new Date().toISOString(),
+      }
+    })
+    batch.set(ref, { items: nextItems, updatedAt: serverTimestamp() }, { merge: true })
+  }
+  await batch.commit()
+  return { remainOwners }
+}
+
+// 정기 반복 task 자동 복제
+// 이전 주차(들)에서 recurrence 설정된 task를 찾아 이번 주차에 없으면 자동 복제
+export async function ensureRecurringTasksForWeek(teamId, uid, currentWeekKey, prevWeekKeysByType) {
+  assertDb()
+  if (!currentWeekKey || !prevWeekKeysByType) return { copied: 0 }
+  const currRef = doc(db, 'teams', teamId, 'members', uid, 'weeks', currentWeekKey)
+  const currSnap = await getDoc(currRef)
+  const currItems = currSnap.exists() ? (currSnap.data().items || []) : []
+
+  // 이미 복제된 task ID 추적용 — parentIds에 이전 주차 task ID가 있으면 복제 완료
+  const alreadyCopiedParentIds = new Set()
+  currItems.forEach(t => {
+    ;(t.parentIds || []).forEach(pid => alreadyCopiedParentIds.add(pid))
+  })
+
+  const newTasks = []
+  // type별로 이전 주차 doc 조회
+  for (const [type, prevKey] of Object.entries(prevWeekKeysByType)) {
+    if (!prevKey) continue
+    const prevRef = doc(db, 'teams', teamId, 'members', uid, 'weeks', prevKey)
+    const prevSnap = await getDoc(prevRef)
+    if (!prevSnap.exists()) continue
+    const prevItems = prevSnap.data().items || []
+
+    prevItems.forEach(prev => {
+      if (!prev.recurrence || prev.recurrence.type !== type) return
+      if (alreadyCopiedParentIds.has(prev.id)) return
+      // 이번 주에 새로 생성
+      const id = `task_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+      newTasks.push({
+        id,
+        title: prev.title,
+        detail: prev.detail || '',
+        kpi: prev.kpi || prev.impact || '',
+        impact: prev.impact || prev.kpi || '',
+        parentIds: [prev.id],
+        siblingIds: [],
+        status: 'todo',
+        priority: prev.priority || 'normal',
+        recurrence: prev.recurrence,
+        visibility: prev.visibility || 'team',
+        isFocus: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+    })
+  }
+
+  if (newTasks.length === 0) return { copied: 0 }
+
+  const merged = [...currItems, ...newTasks]
+  await setDoc(currRef, {
+    items: merged,
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
+  return { copied: newTasks.length, titles: newTasks.map(t => t.title) }
 }
 
 export async function saveWeekTasks(teamId, uid, weekKey, items) {
@@ -443,6 +639,95 @@ export async function updateActionItemFields(teamId, itemId, patch) {
   }, { merge: true })
 }
 
+// === Audit Logs (관리자 페이지에서 누적 조회) ===
+// 모든 삭제/복원/영구삭제/권한변경 이벤트를 누적 기록
+// teams/{teamId}/auditLogs/{autoId}
+export async function addAuditLog(teamId, log) {
+  assertDb()
+  const id = generateLogId()
+  const ref = doc(db, 'teams', teamId, 'auditLogs', id)
+  await setDoc(ref, {
+    id,
+    timestamp: new Date().toISOString(),
+    serverTs: serverTimestamp(),
+    ...log,
+  })
+}
+
+export function subscribeAuditLogs(teamId, callback, max = 200) {
+  assertDb()
+  const ref = collection(db, 'teams', teamId, 'auditLogs')
+  return onSnapshot(query(ref, orderBy('timestamp', 'desc')), snap => {
+    const items = snap.docs.slice(0, max).map(d => ({ id: d.id, ...d.data() }))
+    callback(items)
+  })
+}
+
+function generateLogId() {
+  return `log_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+// === Soft delete (휴지통) — 진행 프로젝트 ===
+// deletedAt + deletedBy + deletedByName 필드 추가, 일반 list에서는 자동 필터링됨
+// audit log도 함께 기록
+export async function softDeleteActionItem(teamId, itemId, deletedBy, deletedByName, snapshotData) {
+  assertDb()
+  await setDoc(doc(db, 'teams', teamId, 'actionItems', itemId), {
+    deletedAt: new Date().toISOString(),
+    deletedBy: deletedBy || '',
+    deletedByName: deletedByName || '',
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
+  // 감사 로그
+  await addAuditLog(teamId, {
+    action: 'soft_delete',
+    target: 'actionItem',
+    targetId: itemId,
+    targetTitle: snapshotData?.title || '',
+    actorUid: deletedBy || '',
+    actorName: deletedByName || '',
+  })
+}
+
+// 휴지통에서 복원 — deletedAt 필드 제거 + audit log
+export async function restoreActionItem(teamId, itemId, restoredBy, restoredByName, snapshotData) {
+  assertDb()
+  const { deleteField } = await import('firebase/firestore')
+  await setDoc(doc(db, 'teams', teamId, 'actionItems', itemId), {
+    deletedAt: deleteField(),
+    deletedBy: deleteField(),
+    deletedByName: deleteField(),
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
+  await addAuditLog(teamId, {
+    action: 'restore',
+    target: 'actionItem',
+    targetId: itemId,
+    targetTitle: snapshotData?.title || '',
+    actorUid: restoredBy || '',
+    actorName: restoredByName || '',
+  })
+}
+
+// 영구 삭제 + audit log
+export async function hardDeleteActionItem(teamId, itemId, purgedBy, purgedByName, snapshotData) {
+  assertDb()
+  await deleteDoc(doc(db, 'teams', teamId, 'actionItems', itemId))
+  // audit log는 doc 삭제 후에 별도 기록 (실패해도 doc 삭제는 이미 완료)
+  try {
+    await addAuditLog(teamId, {
+      action: 'hard_delete',
+      target: 'actionItem',
+      targetId: itemId,
+      targetTitle: snapshotData?.title || '',
+      actorUid: purgedBy || 'auto',
+      actorName: purgedByName || 'auto-purge',
+    })
+  } catch (err) {
+    console.warn('[감사로그 기록 실패]', err.message)
+  }
+}
+
 export async function addActionItemComment(teamId, itemId, comment) {
   assertDb()
   const ref = doc(db, 'teams', teamId, 'actionItems', itemId)
@@ -591,6 +876,55 @@ export async function deleteIdeaNote(teamId, uid, noteId) {
   await deleteDoc(doc(db, 'teams', teamId, 'members', uid, 'notes', noteId))
 }
 
+// === 개인 KPI ===
+// 팀 KPI(teams/{teamId}/kpis/...) 와 별도로 사용자별 KPI를 보관
+// 경로: teams/{teamId}/members/{uid}/kpis/{kpiId}
+
+export function subscribePersonalKpis(teamId, uid, callback) {
+  assertDb()
+  const ref = collection(db, 'teams', teamId, 'members', uid, 'kpis')
+  return onSnapshot(query(ref, orderBy('sortOrder', 'asc')), snap => {
+    callback(snap.docs.map(item => ({ id: item.id, ...item.data() })))
+  })
+}
+
+export async function createPersonalKpi(teamId, uid, kpi) {
+  assertDb()
+  await setDoc(doc(db, 'teams', teamId, 'members', uid, 'kpis', kpi.id), {
+    ...kpi,
+    scope: 'personal',
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function deletePersonalKpi(teamId, uid, kpiId) {
+  assertDb()
+  await deleteDoc(doc(db, 'teams', teamId, 'members', uid, 'kpis', kpiId))
+}
+
+// 홈/팀장 시점에서 모든 팀원의 개인 KPI를 한 번에 구독
+// 인덱스 필요할 수 있음 (collectionGroup + scope filter)
+export function subscribeAllPersonalKpis(teamId, callback) {
+  assertDb()
+  // collectionGroup로 모든 'kpis' 서브컬렉션 검색
+  const q = query(collectionGroup(db, 'kpis'), where('scope', '==', 'personal'))
+  return onSnapshot(q, snap => {
+    const items = snap.docs
+      .filter(d => d.ref.path.startsWith(`teams/${teamId}/members/`))
+      .map(d => {
+        const segments = d.ref.path.split('/')
+        // path: teams/{teamId}/members/{uid}/kpis/{kpiId}
+        const memberUid = segments[3] || ''
+        return { id: d.id, ...d.data(), _memberUid: memberUid }
+      })
+    callback(items)
+  }, error => {
+    console.error('[subscribeAllPersonalKpis] 구독 실패 (collectionGroup 인덱스 필요할 수 있음):', error)
+    callback([])
+  })
+}
+
 export function subscribeFlowSnapshots(teamId, uid, callback) {
   assertDb()
   const ref = collection(db, 'teams', teamId, 'members', uid, 'flowSnapshots')
@@ -650,4 +984,31 @@ export async function addAiUsageRecord(teamId, record) {
 export async function deleteAiUsageRecord(teamId, recordId) {
   assertDb()
   await deleteDoc(doc(db, 'teams', teamId, 'aiUsageRecords', recordId))
+}
+
+// === 주간 자동 회고 ===
+export function subscribeWeeklyRetros(teamId, callback) {
+  assertDb()
+  const ref = collection(db, 'teams', teamId, 'weeklyRetros')
+  return onSnapshot(ref, snapshot => {
+    const items = snapshot.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.weekKey || '').localeCompare(a.weekKey || ''))
+    callback(items)
+  })
+}
+
+export async function saveWeeklyRetro(teamId, weekKey, data) {
+  assertDb()
+  await setDoc(doc(db, 'teams', teamId, 'weeklyRetros', weekKey), {
+    ...data,
+    weekKey,
+    generatedAt: data.generatedAt || new Date().toISOString(),
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function deleteWeeklyRetro(teamId, weekKey) {
+  assertDb()
+  await deleteDoc(doc(db, 'teams', teamId, 'weeklyRetros', weekKey))
 }

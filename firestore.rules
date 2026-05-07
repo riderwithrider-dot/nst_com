@@ -25,6 +25,12 @@ service cloud.firestore {
         || request.resource.data.subteam == resource.data.subteam;
     }
 
+    // collectionGroup('kpis') 쿼리 지원 — 홈에서 모든 팀원 개인 KPI 한 번에 구독용
+    // (특정 path 규칙은 그대로 유효, 이건 collectionGroup 통과를 위한 wildcard 추가)
+    match /{path=**}/kpis/{kpiId} {
+      allow read: if signedIn();
+    }
+
     match /teams/{teamId} {
       allow create: if signedIn();
       allow read, update: if isTeamMember(teamId);
@@ -35,8 +41,9 @@ service cloud.firestore {
         allow read: if isTeamMember(teamId);
 
         match /weeks/{weekKey} {
-          allow read: if isSelf(uid);
-          allow write: if isSelf(uid);
+          // 본인 업무는 본인이 모두 관리. 팀원은 코멘트 미러링을 위해 write 허용 (소규모 팀 신뢰 모델)
+          allow read: if isSelf(uid) || isTeamMember(teamId);
+          allow write: if isSelf(uid) || isTeamMember(teamId);
         }
 
         match /notes/{noteId} {
@@ -47,6 +54,12 @@ service cloud.firestore {
         match /flowSnapshots/{snapshotId} {
           allow read: if isSelf(uid);
           allow write: if isSelf(uid);
+        }
+
+        match /kpis/{kpiId} {
+          // 개인 KPI: 팀장만 등록/수정/삭제, 본인 + 팀원은 read 가능
+          allow read: if isSelf(uid) || isTeamMember(teamId);
+          allow write: if isTeamManager(teamId);
         }
       }
 
@@ -73,6 +86,20 @@ service cloud.firestore {
 
       match /aiUsageRecords/{recordId} {
         allow read, write: if isTeamMember(teamId);
+      }
+
+      // 주간 자동 회고 — 모든 팀원 read, 누구나 write 가능 (자동 생성 + 수동 생성 모두 허용)
+      match /weeklyRetros/{weekKey} {
+        allow read, write: if isTeamMember(teamId);
+      }
+
+      // 감사 로그 (audit logs) — 누가 무엇을 삭제/복원했는지 누적 기록
+      // 누구나 추가 가능 (이벤트 발생 시점에 자동 기록), 관리자만 삭제
+      // 읽기는 팀장만 (관리자 페이지에서만 조회)
+      match /auditLogs/{logId} {
+        allow read: if isTeamManager(teamId);
+        allow create: if isTeamMember(teamId);
+        allow update, delete: if isTeamManager(teamId);
       }
     }
   }

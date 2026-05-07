@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>흐름도 노드 메뉴 — 관계 편집 UX 제안 (A안 vs B안)</title>
+<style>
+  :root {
+    --line: #e3e8e5;
+    --line-strong: #cfd6d2;
+    --ink: #18211d;
+    --ink-soft: #4d5b54;
+    --muted: #7a857f;
+    --accent: #0d7a6e;
+    --accent-soft: #e6f4f1;
+    --warn: #f59e0b;
+    --warn-soft: #fef3c7;
+    --warn-strong: #b45309;
+    --info: #38bdf8;
+    --info-soft: #e0f2fe;
+    --info-strong: #075985;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #f5f7f6;
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    font-size: 13px;
+    line-height: 1.55;
+    padding: 30px;
+  }
+  header.page {
+    margin-bottom: 24px;
+  }
+  header.page h1 { margin: 0 0 4px; font-size: 20px; }
+  header.page p { margin: 0; color: var(--muted); }
+
+  .compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    max-width: 1200px;
+  }
+  .col { }
+  .col h2 {
+    margin: 0 0 12px;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .col .badge-pill {
+    background: var(--accent);
+    color: white;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .col h2.alt .badge-pill {
+    background: #6b7280;
+  }
+  .col p.lead {
+    color: var(--muted);
+    font-size: 12px;
+    margin: 0 0 12px;
+  }
+
+  /* === 노드 메뉴 (실제 위젯 시뮬레이션) === */
+  .node-menu {
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    padding: 12px 14px;
+    width: 340px;
+  }
+
+  .nm-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .nm-head strong { font-size: 13.5px; }
+  .nm-head .x {
+    background: transparent;
+    border: none;
+    color: #6b7280;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 2px 6px;
+  }
+
+  .nm-meta {
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  /* 섹션 헤더 (모태 / 병행 / 연계) */
+  .nm-section {
+    background: #f9fbfa;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+  }
+  .nm-section-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--ink-soft);
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .nm-section-head .arrow {
+    color: var(--accent);
+    font-size: 11px;
+  }
+  .nm-section-head .cnt {
+    margin-left: auto;
+    background: white;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    padding: 1px 8px;
+    color: var(--ink-soft);
+    font-weight: 600;
+    font-size: 10.5px;
+  }
+
+  /* 칩 */
+  .nm-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 6px;
+  }
+  .nm-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 4px 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid;
+    max-width: 100%;
+  }
+  .nm-chip.kpi {
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  .nm-chip.task-parent {
+    background: var(--info-soft);
+    color: var(--info-strong);
+    border-color: var(--info);
+  }
+  .nm-chip.task-sibling {
+    background: var(--warn-soft);
+    color: var(--warn-strong);
+    border-color: var(--warn);
+  }
+  .nm-chip .x {
+    background: transparent;
+    border: none;
+    color: inherit;
+    opacity: 0.65;
+    cursor: pointer;
+    padding: 1px 3px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+  }
+  .nm-chip .x:hover {
+    opacity: 1;
+    background: rgba(220, 38, 38, 0.15);
+    color: #b91c1c;
+  }
+  .nm-chip .icon {
+    font-size: 10px;
+  }
+
+  /* 추가 폼 */
+  .nm-add {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px;
+    background: white;
+    border: 1px dashed var(--line-strong);
+    border-radius: 6px;
+    color: var(--muted);
+    font-size: 11.5px;
+    cursor: pointer;
+  }
+  .nm-add:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .nm-add .plus {
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 13px;
+  }
+  .nm-add select {
+    border: none;
+    background: transparent;
+    padding: 2px 4px;
+    font-size: 11.5px;
+    cursor: pointer;
+    margin-left: auto;
+    color: inherit;
+  }
+
+  /* 액션 영역 */
+  .nm-actions {
+    display: flex;
+    gap: 6px;
+    padding-top: 8px;
+    margin-top: 8px;
+    border-top: 1px solid var(--line);
+  }
+  .nm-actions button {
+    flex: 1;
+    padding: 5px 10px;
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font-size: 11.5px;
+    color: var(--ink-soft);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+  }
+  .nm-actions button:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .nm-actions button.danger:hover {
+    border-color: #ef4444;
+    color: #b91c1c;
+    background: #fee2e2;
+  }
+
+  /* 비어있는 섹션 안내 */
+  .nm-empty {
+    color: #9ca3af;
+    font-size: 11px;
+    font-style: italic;
+    padding: 4px 4px 6px;
+  }
+
+  /* 비교 테이블 */
+  table.compare {
+    width: 100%;
+    margin-top: 28px;
+    border-collapse: collapse;
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    font-size: 12.5px;
+  }
+  table.compare th, table.compare td {
+    padding: 10px 14px;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--line);
+  }
+  table.compare thead th {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 12px;
+  }
+  table.compare tr:last-child td { border-bottom: none; }
+  table.compare td.label {
+    font-weight: 600;
+    color: var(--ink-soft);
+    background: #f9fbfa;
+    width: 130px;
+  }
+  table.compare .pro { color: var(--accent); font-weight: 600; }
+  table.compare .con { color: #b91c1c; }
+
+  .recommend-banner {
+    margin-top: 24px;
+    padding: 14px 18px;
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+  }
+  .recommend-banner strong { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<header class="page">
+  <h1>흐름도 노드 메뉴 — 관계 편집 UX 제안</h1>
+  <p>업무 노드 클릭 시 나타나는 메뉴 레이아웃 비교 · A안 (통합) vs B안 (분리)</p>
+</header>
+
+<div class="compare-grid">
+
+  <!-- ============ A안 ============ -->
+  <div class="col">
+    <h2><span class="badge-pill">★ 추천 A안</span> 모태에 KPI 통합 (2 섹션)</h2>
+    <p class="lead">KPI를 "모태"의 한 종류로 흡수. 흐름도에서 KPI는 어차피 task의 위에서 화살표로 오는 부모 노드라 의미 일치.</p>
+
+    <div class="node-menu">
+      <div class="nm-head">
+        <strong>레포트작성</strong>
+        <button class="x">×</button>
+      </div>
+      <div class="nm-meta">상태 진행 · 모태 2 · 병행 1</div>
+
+      <!-- 모태 섹션 (KPI + 업무 통합) -->
+      <div class="nm-section">
+        <div class="nm-section-head">
+          <span class="arrow">↑</span> 모태 (상위)
+          <span class="cnt">2건</span>
+        </div>
+        <div class="nm-chips">
+          <span class="nm-chip kpi">
+            <span class="icon">▣</span> KPI · 매출
+            <button class="x">×</button>
+          </span>
+          <span class="nm-chip task-parent">
+            <span class="icon">◆</span> 잘뜬다
+            <button class="x">×</button>
+          </span>
+        </div>
+        <div class="nm-add">
+          <span class="plus">＋</span>
+          <span>업무 / KPI 추가</span>
+          <select>
+            <option>선택…</option>
+            <optgroup label="📊 KPI (3건)">
+              <option>월별 분기별 교육&세미나 확인2</option>
+              <option>신상품 출시</option>
+              <option>고객 만족도</option>
+            </optgroup>
+            <optgroup label="◆ 이번 주 업무 (5건)">
+              <option>잘뜨는거맞네</option>
+              <option>AI교육참석</option>
+              <option>신상품런칭</option>
+            </optgroup>
+            <optgroup label="◇ 1개월 히스토리 (8건)">
+              <option>이전 분기 매출 분석</option>
+              <option>4월 SKU 정리</option>
+            </optgroup>
+          </select>
+        </div>
+      </div>
+
+      <!-- 병행 섹션 -->
+      <div class="nm-section">
+        <div class="nm-section-head">
+          <span class="arrow">↔</span> 병행 (동위 진행)
+          <span class="cnt">1건</span>
+        </div>
+        <div class="nm-chips">
+          <span class="nm-chip task-sibling">
+            <span class="icon">◆</span> AI교육참석
+            <button class="x">×</button>
+          </span>
+        </div>
+        <div class="nm-add">
+          <span class="plus">＋</span>
+          <span>업무 추가</span>
+          <select>
+            <option>선택…</option>
+            <option>잘뜨는거맞네</option>
+            <option>신상품런칭</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="nm-actions">
+        <button>👁 숨김</button>
+        <button>↺ 연결 초기화</button>
+        <button class="danger">🗑 삭제</button>
+      </div>
+    </div>
+
+    <p class="lead" style="margin-top:14px">
+      <strong>비어있을 때 화면</strong> — 추가 폼만 깔끔히 표시:
+    </p>
+
+    <div class="node-menu">
+      <div class="nm-head">
+        <strong>신규업무</strong>
+        <button class="x">×</button>
+      </div>
+      <div class="nm-meta">상태 대기 · 모태 0 · 병행 0</div>
+
+      <div class="nm-section">
+        <div class="nm-section-head">
+          <span class="arrow">↑</span> 모태 (상위)
+          <span class="cnt">0건</span>
+        </div>
+        <div class="nm-empty">아직 연결된 상위가 없습니다 — 업무 또는 KPI를 골라 추가하세요</div>
+        <div class="nm-add">
+          <span class="plus">＋</span>
+          <span>업무 / KPI 추가</span>
+          <select><option>선택…</option></select>
+        </div>
+      </div>
+
+      <div class="nm-section">
+        <div class="nm-section-head">
+          <span class="arrow">↔</span> 병행
+          <span class="cnt">0건</span>
+        </div>
+        <div class="nm-empty">동위 진행 업무 없음</div>
+        <div class="nm-add">
+          <span class="plus">＋</span>
+          <span>업무 추가</span>
+          <select><option>선택…</option></select>
+        </div>
+      </div>
+
+      <div class="nm-actions">
+        <button>👁 숨김</button>
+        <button>↺ 연결 초기화</button>
+        <button class="danger">🗑 삭제</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ B안 ============ -->
+  <div class="col">
+    <h2 class="alt"><span class="badge-pill">B안</span> 3 섹션 분리 (KPI 별도)</h2>
+    <p class="lead">"연계"를 KPI 전용으로 분리. 카테고리 구분이 명확하지만 메뉴가 세로로 길어지고 흐름도와 의미가 어긋남.</p>
+
+    <div class="node-menu">
+      <div class="nm-head">
+        <strong>레포트작성</strong>
+        <button class="x">×</button>
+      </div>
+      <div class="nm-meta">상태 진행 · 모태 1 · 병행 1 · KPI 1</div>
+
+      <!-- 모태 섹션 (업무만) -->
+      <div class="nm-section">
+        <div class="nm-section-head">
+          <span class="arrow">↑</span> 모태 (상위 업무)
+          <span class="cnt">1건</span>
+        </div>
+        <div class="nm-chips">
+          <span class="nm-chip task-parent">
+            <span class="icon">◆</span> 잘뜬다
+            <button class="x">×</button>
+          </span>
+        </div>
+        <div class="nm-add">
+          <span class="plus">＋</span>
+          <span>업무 추가</span>
+          <select><option>선택…</option></select>
+        </div>
+      </div>
+
+      <!-- 병행 섹션 -->
+      <div class="nm-section">
+        <div class="nm-section-head">
+          <span class="arrow">↔</span> 병행 (동위 업무)
+          <span class="cnt">1건</span>
+        </div>
+        <div class="nm-chips">
+          <span class="nm-chip task-sibling">
+            <span class="icon">◆</span> AI교육참석
+            <button class="x">×</button>
+          </span>
+        </div>
+        <div class="nm-add">
+          <span class="plus">＋</span>
+          <span>업무 추가</span>
+          <select><option>선택…</option></select>
+        </div>
+      </div>
+
+      <!-- 연계 섹션 (KPI만) -->
+      <div class="nm-section">
+        <div class="nm-section-head">
+          <span class="arrow">▣</span> 연계 (KPI)
+          <span class="cnt">1건</span>
+        </div>
+        <div class="nm-chips">
+          <span class="nm-chip kpi">
+            <span class="icon">▣</span> 매출
+            <button class="x">×</button>
+          </span>
+        </div>
+        <div class="nm-add">
+          <span class="plus">＋</span>
+          <span>KPI 추가</span>
+          <select><option>선택…</option></select>
+        </div>
+      </div>
+
+      <div class="nm-actions">
+        <button>👁 숨김</button>
+        <button>↺ 연결 초기화</button>
+        <button class="danger">🗑 삭제</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ============ 비교표 ============ -->
+<div style="max-width:1200px">
+<table class="compare">
+  <thead>
+    <tr>
+      <th>비교 항목</th>
+      <th>A안 (통합 2 섹션)</th>
+      <th>B안 (분리 3 섹션)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="label">메뉴 세로 길이</td>
+      <td><span class="pro">짧음</span> — 섹션 2개</td>
+      <td><span class="con">길어짐</span> — 섹션 3개로 스크롤 필요할 수도</td>
+    </tr>
+    <tr>
+      <td class="label">흐름도 의미 일치</td>
+      <td><span class="pro">일치</span> — KPI도 화면상 task의 부모로 보임</td>
+      <td><span class="con">어긋남</span> — KPI는 별도 카테고리이지만 차트에선 부모처럼 보임</td>
+    </tr>
+    <tr>
+      <td class="label">KPI / 업무 시각 구분</td>
+      <td>chip 색상으로 구분 (초록=KPI, 파랑=업무)</td>
+      <td>섹션 자체가 분리되어 명확</td>
+    </tr>
+    <tr>
+      <td class="label">"빈 상태"에서 KPI 연결</td>
+      <td><span class="pro">자연스러움</span> — 모태 섹션 한 곳에서 KPI/업무 둘 다 추가</td>
+      <td>연계 섹션을 따로 찾아야 함</td>
+    </tr>
+    <tr>
+      <td class="label">사용자 학습 비용</td>
+      <td>"모태에 KPI 포함" 컨셉 한 번 익히면 됨</td>
+      <td>3 카테고리 차이를 매번 떠올려야 함</td>
+    </tr>
+    <tr>
+      <td class="label">한 번에 여러 종류 처리</td>
+      <td><span class="pro">한 dropdown에서 KPI + 업무 같이 검색</span></td>
+      <td>섹션마다 따로 dropdown</td>
+    </tr>
+    <tr>
+      <td class="label">구현 난이도</td>
+      <td>적음 — dropdown에 optgroup 추가</td>
+      <td>중간 — 새 섹션 + KPI 전용 핸들러 분리</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="recommend-banner">
+  <strong>최종 추천 — A안</strong><br>
+  ① 메뉴가 컴팩트해서 클릭 부담이 적고, ② 흐름도(KPI가 업무의 윗쪽 화살표 시작점)와 의미가 일치하며, ③ 한 dropdown에서 KPI/업무 모두 검색 가능해서 빠릅니다.
+  단점인 "KPI ↔ 업무 혼동"은 chip 색상(초록=KPI, 파랑=업무)과 아이콘(▣ KPI, ◆ 업무)으로 충분히 해결 가능.
+  B안은 "KPI 카테고리를 명확히 분리해야 한다"는 정책적 이유가 있을 때만 선택.
+</div>
+
+</body>
+</html>

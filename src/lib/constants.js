@@ -57,7 +57,7 @@ export function getSubteamLabel(subteamId) {
 export const STATUS_META = {
   todo: { label: '대기', tone: 'gray' },
   doing: { label: '진행', tone: 'blue' },
-  review: { label: '검토', tone: 'amber' },
+  review: { label: '검토 요청', tone: 'amber' },
   blocked: { label: '보류', tone: 'red' },
   done: { label: '완료', tone: 'green' },
 }

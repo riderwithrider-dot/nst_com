@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>워크로드 카드 — B/D 디벨롭 안 비교</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    background: #f4f6f7;
+    color: #18211d;
+    margin: 0;
+    padding: 24px;
+    line-height: 1.5;
+  }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 32px 0 12px; color: #0d7a6e; border-bottom: 2px solid rgba(20, 184, 166, 0.3); padding-bottom: 6px; }
+  h3 { font-size: 13px; margin: 16px 0 8px; color: #4d5b54; font-weight: 700; }
+  p.desc { color: #6b7280; font-size: 13px; margin: 4px 0 16px; }
+  .compare-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
+  }
+  .variant-label {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    color: white;
+    background: #14b8a6;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-bottom: 6px;
+  }
+  .variant-pros {
+    font-size: 11.5px;
+    color: #047857;
+    margin: 6px 0 0;
+  }
+  .variant-cons {
+    font-size: 11.5px;
+    color: #b91c1c;
+    margin: 2px 0 0;
+  }
+
+  /* === 워크로드 카드 베이스 (실제 앱과 거의 동일) === */
+  .workload-card {
+    background: white;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-top: 3px solid #14b8a6;
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .wc-header { display: flex; align-items: center; justify-content: space-between; }
+  .team-tag {
+    background: rgba(20, 184, 166, 0.15);
+    color: #0d7a6e;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .member-count {
+    font-size: 11px;
+    color: #6b7280;
+  }
+  .metric-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 13px;
+    padding: 4px 8px;
+    border-radius: 6px;
+  }
+  .metric-row strong { font-weight: 700; font-size: 16px; }
+  .metric-label { color: #6b7280; font-size: 12px; }
+
+  /* === B. 팀원별 부하 미니바 — 변형 4가지 === */
+
+  /* B1. 단순 텍스트 인라인 */
+  .b1-load {
+    font-size: 12px;
+    color: #4d5b54;
+    background: rgba(0, 0, 0, 0.025);
+    padding: 8px 10px;
+    border-radius: 6px;
+    border-left: 3px solid #14b8a6;
+  }
+  .b1-load .b1-label { font-weight: 700; color: #1f2937; margin-right: 4px; }
+  .b1-load .b1-mem { font-weight: 600; }
+  .b1-load .b1-cnt { color: #6b7280; }
+  .b1-load .b1-sep { color: #d1d5db; margin: 0 4px; }
+
+  /* B2. 가로 스택 막대 (한 줄에 모든 멤버 비율) */
+  .b2-load {
+    background: rgba(0, 0, 0, 0.025);
+    padding: 8px 10px;
+    border-radius: 6px;
+    border-left: 3px solid #14b8a6;
+  }
+  .b2-title { font-size: 12px; font-weight: 700; color: #1f2937; margin-bottom: 6px; }
+  .b2-bar {
+    display: flex;
+    width: 100%;
+    height: 18px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.05);
+  }
+  .b2-bar > span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .b2-bar > span.heavy { background: #ef4444; }
+  .b2-bar > span.normal { background: #3b82f6; }
+  .b2-bar > span.light { background: #94a3b8; }
+  .b2-bar > span.lightest { background: #cbd5e1; color: #475569; }
+  .b2-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    margin-top: 6px;
+    font-size: 11px;
+  }
+  .b2-legend span { display: inline-flex; align-items: center; gap: 4px; }
+  .b2-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+
+  /* B3. 멤버별 개별 가로 게이지 (가장 많은 사람 = 100%) */
+  .b3-load {
+    background: rgba(0, 0, 0, 0.025);
+    padding: 8px 10px;
+    border-radius: 6px;
+    border-left: 3px solid #14b8a6;
+  }
+  .b3-title { font-size: 12px; font-weight: 700; color: #1f2937; margin-bottom: 6px; }
+  .b3-row {
+    display: grid;
+    grid-template-columns: 60px 1fr 28px;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  .b3-row:last-child { margin-bottom: 0; }
+  .b3-name { font-size: 11.5px; font-weight: 600; color: #1f2937; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .b3-track { background: rgba(0, 0, 0, 0.06); height: 8px; border-radius: 4px; overflow: hidden; }
+  .b3-fill { height: 100%; border-radius: 4px; }
+  .b3-fill.heavy { background: #ef4444; }
+  .b3-fill.warn { background: #f59e0b; }
+  .b3-fill.normal { background: #3b82f6; }
+  .b3-cnt { font-size: 11.5px; font-weight: 700; color: #374151; text-align: right; }
+  .b3-cnt.heavy { color: #b91c1c; }
+
+  /* B4. 칩 그리드 — 카드 형태의 작은 칩들 */
+  .b4-load {
+    background: rgba(0, 0, 0, 0.025);
+    padding: 8px 10px;
+    border-radius: 6px;
+    border-left: 3px solid #14b8a6;
+  }
+  .b4-title { font-size: 12px; font-weight: 700; color: #1f2937; margin-bottom: 6px; }
+  .b4-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .b4-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: white;
+    border: 1px solid #e3e8e5;
+    padding: 3px 8px 3px 6px;
+    border-radius: 999px;
+    font-size: 11.5px;
+  }
+  .b4-chip .b4-name { font-weight: 600; color: #1f2937; }
+  .b4-chip .b4-cnt { font-weight: 700; color: #14b8a6; }
+  .b4-chip.heavy { border-color: #fecaca; background: rgba(254, 226, 226, 0.4); }
+  .b4-chip.heavy .b4-cnt { color: #b91c1c; }
+  .b4-chip .heavy-icon { color: #b91c1c; font-size: 10px; }
+
+  /* === D. KPI 분포 — 변형 3가지 === */
+
+  /* D1. 단순 칩 (상위 3개) */
+  .d1-kpi {
+    background: rgba(20, 184, 166, 0.04);
+    padding: 8px 10px;
+    border-radius: 6px;
+    border-left: 3px solid #0d7a6e;
+  }
+  .d1-title { font-size: 12px; font-weight: 700; color: #1f2937; margin-bottom: 6px; }
+  .d1-chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+  .d1-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(20, 184, 166, 0.1);
+    color: #0d7a6e;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 600;
+  }
+  .d1-chip .d1-cnt { font-weight: 700; opacity: 0.85; }
+  .d1-chip.dominant { background: rgba(245, 158, 11, 0.18); color: #92400e; border: 1px solid #f59e0b; }
+  .d1-more { font-size: 10.5px; color: #9ca3af; font-style: italic; }
+
+  /* D2. 가로 스택 비율 막대 + 범례 */
+  .d2-kpi {
+    background: rgba(20, 184, 166, 0.04);
+    padding: 8px 10px;
+    border-radius: 6px;
+    border-left: 3px solid #0d7a6e;
+  }
+  .d2-title { font-size: 12px; font-weight: 700; color: #1f2937; margin-bottom: 6px; }
+  .d2-bar {
+    display: flex;
+    width: 100%;
+    height: 12px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.05);
+    margin-bottom: 6px;
+  }
+  .d2-bar > span { display: block; min-width: 0; }
+  .d2-bar > span:nth-child(1) { background: #14b8a6; }
+  .d2-bar > span:nth-child(2) { background: #3b82f6; }
+  .d2-bar > span:nth-child(3) { background: #f59e0b; }
+  .d2-bar > span:nth-child(4) { background: #cbd5e1; }
+  .d2-legend { display: flex; flex-direction: column; gap: 3px; font-size: 11px; }
+  .d2-legend-row { display: flex; align-items: center; gap: 6px; }
+  .d2-legend-row i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+  .d2-legend-row .d2-name { color: #4d5b54; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .d2-legend-row .d2-pct { font-weight: 700; color: #1f2937; }
+
+  /* D3. 칩 + 쏠림 경고 + 카운트 미니 도넛 */
+  .d3-kpi {
+    background: rgba(20, 184, 166, 0.04);
+    padding: 8px 10px;
+    border-radius: 6px;
+    border-left: 3px solid #0d7a6e;
+  }
+  .d3-title { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 700; color: #1f2937; margin-bottom: 6px; }
+  .d3-warn { font-size: 10.5px; color: #b45309; background: rgba(245, 158, 11, 0.15); padding: 2px 6px; border-radius: 999px; font-weight: 700; }
+  .d3-list { display: flex; flex-direction: column; gap: 4px; }
+  .d3-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  .d3-rank {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #0d7a6e; color: white;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700; flex-shrink: 0;
+  }
+  .d3-rank.r2 { background: #4d5b54; }
+  .d3-rank.r3 { background: #94a3b8; }
+  .d3-name { flex: 1; color: #1f2937; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .d3-cnt { font-size: 11px; color: #4d5b54; font-weight: 700; }
+  .d3-pct {
+    font-size: 10px;
+    color: #6b7280;
+    background: rgba(0, 0, 0, 0.05);
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-weight: 600;
+    min-width: 32px;
+    text-align: center;
+  }
+  .d3-pct.dominant { background: rgba(245, 158, 11, 0.18); color: #92400e; }
+
+  /* 추천 표시 */
+  .recommend-badge {
+    display: inline-block;
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: white;
+    padding: 2px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    margin-left: 6px;
+  }
+</style>
+</head>
+<body>
+
+<h1>📊 부서별 워크로드 — B (팀원별 부하) + D (KPI 분포) 디벨롭 안</h1>
+<p class="desc">시나리오: <b>커머스팀</b> · 활성 11건 / 완료 6건 / 지연 2건 · 팀원 4명 (홍길동·김철수·이영희·박민수)</p>
+
+<!-- ============================================================ -->
+<h2>B. 팀원별 부하 — 4가지 변형</h2>
+<p class="desc">목표: 누가 과도하게 일을 떠안고 있는지 한눈에 식별 (가장 많은 사람 강조)</p>
+
+<div class="compare-grid">
+
+  <!-- B1 -->
+  <div>
+    <span class="variant-label">B1</span>
+    <h3>단순 텍스트 인라인</h3>
+    <div class="workload-card">
+      <div class="wc-header">
+        <span class="team-tag">커머스 (내 부서)</span>
+        <span class="member-count">4명</span>
+      </div>
+      <div class="metric-row"><span class="metric-label">활성</span><strong>11건</strong></div>
+      <div class="b1-load">
+        <span class="b1-label">팀원:</span>
+        <span class="b1-mem">홍길동</span><span class="b1-cnt"> 5건</span>
+        <span class="b1-sep">·</span>
+        <span class="b1-mem">김철수</span><span class="b1-cnt"> 3건</span>
+        <span class="b1-sep">·</span>
+        <span class="b1-mem">이영희</span><span class="b1-cnt"> 2건</span>
+        <span class="b1-sep">·</span>
+        <span class="b1-mem">박민수</span><span class="b1-cnt"> 1건</span>
+      </div>
+    </div>
+    <p class="variant-pros">✓ 간단·세로 공간 절약 (1줄)</p>
+    <p class="variant-cons">✗ 누가 많은지 한눈에 안 보임 (숫자 비교 필요)</p>
+  </div>
+
+  <!-- B2 -->
+  <div>
+    <span class="variant-label">B2</span>
+    <h3>가로 스택 막대 (전체 100% 분할)</h3>
+    <div class="workload-card">
+      <div class="wc-header">
+        <span class="team-tag">커머스</span>
+        <span class="member-count">4명</span>
+      </div>
+      <div class="metric-row"><span class="metric-label">활성</span><strong>11건</strong></div>
+      <div class="b2-load">
+        <div class="b2-title">팀원 부하 분포</div>
+        <div class="b2-bar">
+          <span class="heavy"   style="width: 45%;" title="홍길동 5건">홍 5</span>
+          <span class="normal"  style="width: 27%;" title="김철수 3건">김 3</span>
+          <span class="light"   style="width: 18%;" title="이영희 2건">이 2</span>
+          <span class="lightest" style="width: 10%;" title="박민수 1건">박</span>
+        </div>
+        <div class="b2-legend">
+          <span><i style="background:#ef4444"></i> 홍길동 45%</span>
+          <span><i style="background:#3b82f6"></i> 김철수 27%</span>
+          <span><i style="background:#94a3b8"></i> 이영희 18%</span>
+          <span><i style="background:#cbd5e1"></i> 박민수 10%</span>
+        </div>
+      </div>
+    </div>
+    <p class="variant-pros">✓ 비율 직관적 — 한 사람이 절반 이상 차지하면 즉시 보임</p>
+    <p class="variant-cons">✗ 멤버 5명+ 가면 라벨 짤림 / 1건짜리는 너무 작음</p>
+  </div>
+
+  <!-- B3 -->
+  <div>
+    <span class="variant-label">B3 ⭐</span>
+    <h3>멤버별 개별 게이지<span class="recommend-badge">추천</span></h3>
+    <div class="workload-card">
+      <div class="wc-header">
+        <span class="team-tag">커머스</span>
+        <span class="member-count">4명</span>
+      </div>
+      <div class="metric-row"><span class="metric-label">활성</span><strong>11건</strong></div>
+      <div class="b3-load">
+        <div class="b3-title">팀원 부하 (활성 기준)</div>
+        <div class="b3-row">
+          <span class="b3-name" title="홍길동">홍길동</span>
+          <div class="b3-track"><div class="b3-fill heavy" style="width: 100%"></div></div>
+          <span class="b3-cnt heavy">5</span>
+        </div>
+        <div class="b3-row">
+          <span class="b3-name">김철수</span>
+          <div class="b3-track"><div class="b3-fill warn" style="width: 60%"></div></div>
+          <span class="b3-cnt">3</span>
+        </div>
+        <div class="b3-row">
+          <span class="b3-name">이영희</span>
+          <div class="b3-track"><div class="b3-fill normal" style="width: 40%"></div></div>
+          <span class="b3-cnt">2</span>
+        </div>
+        <div class="b3-row">
+          <span class="b3-name">박민수</span>
+          <div class="b3-track"><div class="b3-fill normal" style="width: 20%"></div></div>
+          <span class="b3-cnt">1</span>
+        </div>
+      </div>
+    </div>
+    <p class="variant-pros">✓ 누가 과부하인지 한눈에 (가장 큰 사람 = 100% 빨강)<br>✓ 멤버 6~7명까지 무리 없음<br>✓ 막대 색 = 부하 수준 (빨강/주황/파랑)</p>
+    <p class="variant-cons">✗ B1보다 세로 공간 큼 (멤버 N명 × 14px)</p>
+  </div>
+
+  <!-- B4 -->
+  <div>
+    <span class="variant-label">B4</span>
+    <h3>칩 그리드 (과부하 강조)</h3>
+    <div class="workload-card">
+      <div class="wc-header">
+        <span class="team-tag">커머스</span>
+        <span class="member-count">4명</span>
+      </div>
+      <div class="metric-row"><span class="metric-label">활성</span><strong>11건</strong></div>
+      <div class="b4-load">
+        <div class="b4-title">팀원 부하</div>
+        <div class="b4-chips">
+          <span class="b4-chip heavy"><span class="heavy-icon">▲</span><span class="b4-name">홍길동</span><span class="b4-cnt">5</span></span>
+          <span class="b4-chip"><span class="b4-name">김철수</span><span class="b4-cnt">3</span></span>
+          <span class="b4-chip"><span class="b4-name">이영희</span><span class="b4-cnt">2</span></span>
+          <span class="b4-chip"><span class="b4-name">박민수</span><span class="b4-cnt">1</span></span>
+        </div>
+      </div>
+    </div>
+    <p class="variant-pros">✓ 컴팩트 + 시각적으로 깔끔<br>✓ 과부하만 빨갛게 강조 (▲ 아이콘)</p>
+    <p class="variant-cons">✗ 부하 차이가 숫자로만 보임 (시각 비교 약함)</p>
+  </div>
+
+</div>
+
+<!-- ============================================================ -->
+<h2>D. KPI 분포 — 3가지 변형</h2>
+<p class="desc">목표: 부서가 어떤 KPI에 집중하는지, 한쪽에 너무 쏠려 있지는 않은지 가시화</p>
+
+<div class="compare-grid">
+
+  <!-- D1 -->
+  <div>
+    <span class="variant-label">D1 ⭐</span>
+    <h3>단순 칩 + 쏠림 강조<span class="recommend-badge">추천</span></h3>
+    <div class="workload-card">
+      <div class="wc-header">
+        <span class="team-tag">커머스</span>
+        <span class="member-count">4명</span>
+      </div>
+      <div class="metric-row"><span class="metric-label">활성</span><strong>11건</strong></div>
+      <div class="d1-kpi">
+        <div class="d1-title">집중 KPI (상위 3)</div>
+        <div class="d1-chips">
+          <span class="d1-chip dominant">▣ 자사몰 성장 <span class="d1-cnt">7건</span></span>
+          <span class="d1-chip">▣ 레몬즙 판매계획 <span class="d1-cnt">2건</span></span>
+          <span class="d1-chip">▣ Forecast 정확도 <span class="d1-cnt">2건</span></span>
+          <span class="d1-more">+ 1건 기타</span>
+        </div>
+      </div>
+    </div>
+    <p class="variant-pros">✓ 가장 컴팩트 (1~2줄)<br>✓ 쏠린 KPI(60%+)는 황색 강조 — 즉시 인지<br>✓ 다른 KPI 칩 디자인과 일관</p>
+    <p class="variant-cons">✗ 정확한 비율은 안 보임 (호버에서)</p>
+  </div>
+
+  <!-- D2 -->
+  <div>
+    <span class="variant-label">D2</span>
+    <h3>가로 스택 비율 막대 + 범례</h3>
+    <div class="workload-card">
+      <div class="wc-header">
+        <span class="team-tag">커머스</span>
+        <span class="member-count">4명</span>
+      </div>
+      <div class="metric-row"><span class="metric-label">활성</span><strong>11건</strong></div>
+      <div class="d2-kpi">
+        <div class="d2-title">KPI 분포</div>
+        <div class="d2-bar">
+          <span style="width: 64%"></span>
+          <span style="width: 18%"></span>
+          <span style="width: 9%"></span>
+          <span style="width: 9%"></span>
+        </div>
+        <div class="d2-legend">
+          <div class="d2-legend-row"><i style="background:#14b8a6"></i><span class="d2-name">자사몰 성장</span><span class="d2-pct">64%</span></div>
+          <div class="d2-legend-row"><i style="background:#3b82f6"></i><span class="d2-name">레몬즙 판매계획</span><span class="d2-pct">18%</span></div>
+          <div class="d2-legend-row"><i style="background:#f59e0b"></i><span class="d2-name">Forecast 정확도</span><span class="d2-pct">9%</span></div>
+          <div class="d2-legend-row"><i style="background:#cbd5e1"></i><span class="d2-name">기타 1건</span><span class="d2-pct">9%</span></div>
+        </div>
+      </div>
+    </div>
+    <p class="variant-pros">✓ 비율 정확 + 시각적으로 강력<br>✓ 막대 한 색이 압도적이면 쏠림 즉시 보임</p>
+    <p class="variant-cons">✗ 세로 공간 가장 큼 (제목+막대+범례 N줄)<br>✗ KPI 4개+ 가면 막대 색이 비슷해짐</p>
+  </div>
+
+  <!-- D3 -->
+  <div>
+    <span class="variant-label">D3</span>
+    <h3>순위 리스트 + 쏠림 경고 배지</h3>
+    <div class="workload-card">
+      <div class="wc-header">
+        <span class="team-tag">커머스</span>
+        <span class="member-count">4명</span>
+      </div>
+      <div class="metric-row"><span class="metric-label">활성</span><strong>11건</strong></div>
+      <div class="d3-kpi">
+        <div class="d3-title">
+          집중 KPI
+          <span class="d3-warn">⚠ 한 KPI 쏠림 64%</span>
+        </div>
+        <div class="d3-list">
+          <div class="d3-row">
+            <span class="d3-rank">1</span>
+            <span class="d3-name">자사몰 성장</span>
+            <span class="d3-cnt">7건</span>
+            <span class="d3-pct dominant">64%</span>
+          </div>
+          <div class="d3-row">
+            <span class="d3-rank r2">2</span>
+            <span class="d3-name">레몬즙 판매계획</span>
+            <span class="d3-cnt">2건</span>
+            <span class="d3-pct">18%</span>
+          </div>
+          <div class="d3-row">
+            <span class="d3-rank r3">3</span>
+            <span class="d3-name">Forecast 정확도</span>
+            <span class="d3-cnt">2건</span>
+            <span class="d3-pct">18%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="variant-pros">✓ 정보량 가장 많음 (순위·건수·비율 모두)<br>✓ 쏠림 경고 배지가 명시적 (60%+)</p>
+    <p class="variant-cons">✗ B3와 같이 쓰면 카드 길이 큼<br>✗ 다른 KPI 표시(일자별/내 업무)와 디자인 다름</p>
+  </div>
+
+</div>
+
+<!-- ============================================================ -->
+<h2>🎯 추천 조합 — B3 + D1 (실제 카드 미리보기)</h2>
+<p class="desc">B3 (멤버 게이지) + D1 (KPI 칩) 조합. 두 정보가 시각적으로 분리되며 카드 길이도 적당.</p>
+
+<div style="max-width: 360px;">
+  <div class="workload-card">
+    <div class="wc-header">
+      <span class="team-tag">커머스 (내 부서)</span>
+      <span class="member-count">4명</span>
+    </div>
+
+    <!-- 기존 metric -->
+    <div style="display:flex; flex-direction:column; gap: 4px;">
+      <div class="metric-row" style="background: rgba(0,0,0,0.025);"><span class="metric-label">활성</span><strong>11건</strong></div>
+      <div class="metric-row"><span class="metric-label" style="color:#059669;">완료</span><strong style="color:#059669;">6건</strong></div>
+      <div class="metric-row"><span class="metric-label" style="color:#b91c1c;">지연</span><strong style="color:#b91c1c;">2건 (18%)</strong></div>
+    </div>
+
+    <!-- 진행 바 -->
+    <div>
+      <div style="height: 6px; background: rgba(0,0,0,0.08); border-radius: 3px; overflow: hidden;">
+        <span style="display:block; width: 35%; height: 100%; background: #14b8a6;"></span>
+      </div>
+      <small style="font-size: 11px; color: #6b7280;">완료율 35%</small>
+    </div>
+
+    <!-- B3: 팀원 부하 -->
+    <div class="b3-load">
+      <div class="b3-title">👥 팀원 부하</div>
+      <div class="b3-row">
+        <span class="b3-name">홍길동</span>
+        <div class="b3-track"><div class="b3-fill heavy" style="width: 100%"></div></div>
+        <span class="b3-cnt heavy">5</span>
+      </div>
+      <div class="b3-row">
+        <span class="b3-name">김철수</span>
+        <div class="b3-track"><div class="b3-fill warn" style="width: 60%"></div></div>
+        <span class="b3-cnt">3</span>
+      </div>
+      <div class="b3-row">
+        <span class="b3-name">이영희</span>
+        <div class="b3-track"><div class="b3-fill normal" style="width: 40%"></div></div>
+        <span class="b3-cnt">2</span>
+      </div>
+      <div class="b3-row">
+        <span class="b3-name">박민수</span>
+        <div class="b3-track"><div class="b3-fill normal" style="width: 20%"></div></div>
+        <span class="b3-cnt">1</span>
+      </div>
+    </div>
+
+    <!-- D1: KPI 분포 -->
+    <div class="d1-kpi">
+      <div class="d1-title">🎯 집중 KPI</div>
+      <div class="d1-chips">
+        <span class="d1-chip dominant">▣ 자사몰 성장 <span class="d1-cnt">7</span></span>
+        <span class="d1-chip">▣ 레몬즙 <span class="d1-cnt">2</span></span>
+        <span class="d1-chip">▣ Forecast <span class="d1-cnt">2</span></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top: 24px;">🧠 데이터 출처 (구현 시 활용)</h3>
+<ul style="font-size: 13px; color: #4d5b54;">
+  <li><b>B (팀원 부하):</b> 기존 <code>teamFeed[].items[]</code>를 멤버별로 그룹핑 — 추가 데이터 없음</li>
+  <li><b>D (KPI 분포):</b> 같은 task의 <code>task.kpi || task.impact</code> 필드 카운트 — 추가 데이터 없음</li>
+  <li><b>쏠림 임계:</b> 1위 KPI가 60%+ 차지 시 황색 배지 (변경 가능)</li>
+  <li><b>과부하 임계:</b> 부서 평균 대비 1.5배 이상 / 또는 막대 100% 차지하는 사람 = 빨강</li>
+  <li><b>활성 vs 완료 토글:</b> 펼침 카테고리에 따라 같은 정보로 다른 분석 가능 (확장 옵션)</li>
+</ul>
+
+</body>
+</html>

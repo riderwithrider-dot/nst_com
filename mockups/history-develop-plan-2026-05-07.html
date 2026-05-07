@@ -1,0 +1,859 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>완료 업무 히스토리 — 디벨롭 플랜 시각화</title>
+<style>
+  :root {
+    --line: #e3e8e5;
+    --line-strong: #cfd6d2;
+    --ink: #18211d;
+    --ink-soft: #4d5b54;
+    --muted: #7a857f;
+    --accent: #0d7a6e;
+    --accent-soft: #e6f4f1;
+    --warn: #f59e0b;
+    --warn-soft: #fef3c7;
+    --warn-strong: #b45309;
+    --info: #3b82f6;
+    --info-soft: #dbeafe;
+    --danger: #ef4444;
+    --danger-soft: #fee2e2;
+    --ok: #10b981;
+    --ok-soft: #d1fae5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #f5f7f6;
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    font-size: 13px;
+    line-height: 1.55;
+    padding: 32px 28px;
+  }
+  header.page {
+    margin-bottom: 28px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 18px;
+  }
+  header.page h1 { margin: 0 0 6px; font-size: 22px; }
+  header.page p { margin: 0; color: var(--muted); }
+
+  /* === 단계 헤더 === */
+  .phase-section { margin-bottom: 36px; }
+  .phase-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .phase-pill {
+    display: inline-block;
+    padding: 3px 12px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    color: white;
+  }
+  .phase-pill.short { background: var(--ok); }
+  .phase-pill.mid { background: var(--info); }
+  .phase-pill.long { background: #9333ea; }
+  .phase-head h2 { margin: 0; font-size: 17px; }
+  .phase-lead {
+    color: var(--muted);
+    font-size: 12.5px;
+    margin: 0 0 14px;
+  }
+
+  /* === 카드 공통 (히스토리 항목) === */
+  .history-card {
+    background: white;
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--ok);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  }
+
+  /* 비교 라벨 */
+  .demo-label {
+    display: inline-block;
+    padding: 2px 9px;
+    background: #f3f4f6;
+    color: var(--ink-soft);
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .demo-label.before { background: #fee2e2; color: #b91c1c; }
+  .demo-label.after { background: var(--ok-soft); color: #065f46; }
+
+  /* === 1. 요약 헤더 === */
+  .h-title { font-size: 14px; font-weight: 700; }
+  .h-dates {
+    color: var(--muted);
+    font-size: 11.5px;
+    margin: 2px 0 0;
+  }
+  .summary-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--line);
+  }
+  .summary-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    background: #f9fbfa;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 11.5px;
+    color: var(--ink-soft);
+    font-weight: 600;
+  }
+  .summary-chip .num { color: var(--accent); font-weight: 700; }
+  .summary-chip.kpi-chip { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .summary-chip.duration { background: var(--info-soft); color: #1e3a8a; border-color: var(--info); }
+
+  /* === 2. 타임라인 === */
+  .timeline-wrap {
+    margin: 14px 0 4px;
+    padding: 12px 16px;
+    background: linear-gradient(to right, var(--accent-soft), white, var(--ok-soft));
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    position: relative;
+  }
+  .timeline-track {
+    position: relative;
+    height: 50px;
+    margin: 14px 12px 6px;
+  }
+  .timeline-line {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(to right, var(--accent) 0%, var(--info) 50%, var(--ok) 100%);
+    transform: translateY(-50%);
+    border-radius: 2px;
+  }
+  .timeline-dot {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: white;
+    border: 3px solid var(--info);
+    cursor: pointer;
+    transition: transform 0.12s;
+  }
+  .timeline-dot:hover {
+    transform: translate(-50%, -50%) scale(1.25);
+    z-index: 2;
+  }
+  .timeline-dot.start {
+    border-color: var(--accent);
+    background: var(--accent);
+  }
+  .timeline-dot.end {
+    border-color: var(--ok);
+    background: var(--ok);
+  }
+  .timeline-dot.progress { border-color: var(--info); }
+  .timeline-dot.comment { border-color: var(--warn); background: var(--warn); width: 12px; height: 12px; }
+  .timeline-label {
+    position: absolute;
+    top: calc(50% + 16px);
+    transform: translateX(-50%);
+    font-size: 10.5px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .timeline-label.start { color: var(--accent); font-weight: 700; }
+  .timeline-label.end { color: var(--ok); font-weight: 700; }
+  /* 호버 미리보기 */
+  .timeline-dot::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--ink);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    white-space: pre-wrap;
+    width: max-content;
+    max-width: 220px;
+    text-align: left;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+    z-index: 10;
+    line-height: 1.4;
+    font-weight: 400;
+  }
+  .timeline-dot:hover::after { opacity: 1; }
+  .timeline-legend {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    font-size: 10.5px;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+  .legend-dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    margin-right: 3px;
+    vertical-align: middle;
+  }
+  .lg-start { background: var(--accent); }
+  .lg-progress { background: var(--info); }
+  .lg-comment { background: var(--warn); }
+  .lg-end { background: var(--ok); }
+
+  /* === 3. 본문 확장 (펼친 상태) === */
+  .expanded-body {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .section-h {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ink);
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  /* 진행로그 카드들 */
+  .progress-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 8px;
+  }
+  .progress-card {
+    background: #f9fbfa;
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--info);
+    border-radius: 8px;
+    padding: 9px 11px;
+    font-size: 12px;
+  }
+  .progress-card .head {
+    display: flex;
+    justify-content: space-between;
+    color: var(--muted);
+    font-size: 10.5px;
+    margin-bottom: 4px;
+  }
+  .progress-card p { margin: 0 0 6px; line-height: 1.5; }
+  .progress-card .thumbs {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .progress-card .thumb {
+    width: 36px;
+    height: 36px;
+    background: linear-gradient(135deg, #cbd5d2, #9ca3af);
+    border-radius: 4px;
+    border: 1px solid var(--line-strong);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 9px;
+    font-weight: 700;
+  }
+
+  /* 코멘트 chat-style */
+  .chat-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: #fafbfa;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px;
+  }
+  .chat-bubble {
+    max-width: 75%;
+    padding: 7px 11px;
+    border-radius: 14px;
+    font-size: 12px;
+  }
+  .chat-bubble .bubble-head {
+    font-size: 10.5px;
+    color: var(--muted);
+    margin-bottom: 2px;
+  }
+  .chat-bubble .bubble-head strong {
+    font-size: 11px;
+    color: var(--ink);
+    margin-right: 6px;
+  }
+  .chat-bubble.is-mine {
+    align-self: flex-end;
+    background: #fef9c3;
+    border: 1px solid #fbbf24;
+    border-radius: 14px 14px 4px 14px;
+  }
+  .chat-bubble.is-other {
+    align-self: flex-start;
+    background: transparent;
+    border: 1px dashed #9ca3af;
+    border-radius: 14px 14px 14px 4px;
+  }
+  .chat-bubble p { margin: 0; }
+
+  /* === 4. AI 자동 태깅 + AI 요약 카드 === */
+  .ai-summary-card {
+    background: linear-gradient(135deg, #faf5ff, #fff7ed);
+    border: 1px solid #c084fc;
+    border-radius: 10px;
+    padding: 14px 16px;
+    position: relative;
+  }
+  .ai-summary-card::before {
+    content: '🤖 AI 자동 분석 (완료 시점 1회 생성)';
+    display: inline-block;
+    position: absolute;
+    top: -10px;
+    left: 12px;
+    background: linear-gradient(90deg, #9333ea, #f97316);
+    color: white;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+  }
+  .ai-summary-card .ai-headline {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: #6b21a8;
+    margin: 8px 0 10px;
+    line-height: 1.5;
+  }
+  .ai-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .ai-block {
+    background: white;
+    border: 1px solid #e3e8e5;
+    border-radius: 8px;
+    padding: 9px 12px;
+  }
+  .ai-block h5 {
+    margin: 0 0 5px;
+    font-size: 11px;
+    color: var(--muted);
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+  }
+  .ai-block ul { margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.55; }
+  .ai-block ul li { margin-bottom: 3px; }
+  .ai-block .kpi-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    margin-top: 4px;
+  }
+  .ai-block .kpi-bar .track {
+    flex: 1;
+    height: 8px;
+    background: #f3f4f6;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .ai-block .kpi-bar .track > i {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--info));
+  }
+  .collab-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .collab-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 8px;
+    background: #f9fbfa;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 11px;
+  }
+  .collab-chip .av {
+    width: 16px; height: 16px;
+    background: var(--accent);
+    color: white;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-weight: 700;
+  }
+  .collab-chip .role {
+    color: var(--muted);
+    font-size: 10px;
+    margin-left: 2px;
+  }
+
+  /* JSON schema box */
+  .schema-box {
+    margin-top: 14px;
+    padding: 12px 14px;
+    background: #18211d;
+    color: #d1d5db;
+    border-radius: 8px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    line-height: 1.6;
+    overflow-x: auto;
+  }
+  .schema-box .key { color: #fde68a; }
+  .schema-box .str { color: #86efac; }
+  .schema-box .num { color: #93c5fd; }
+  .schema-box .cmt { color: #6b7280; }
+
+  /* === 검색/필터 패널 === */
+  .filter-panel {
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 16px;
+    display: grid;
+    grid-template-columns: 1fr auto auto auto;
+    gap: 8px;
+    align-items: center;
+  }
+  .filter-panel input[type=search] {
+    padding: 6px 12px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font-size: 12.5px;
+  }
+  .filter-panel select {
+    padding: 6px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font-size: 11.5px;
+    background: white;
+  }
+  .cluster-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+  }
+  .cluster-card {
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px;
+  }
+  .cluster-card strong { display: block; margin-bottom: 6px; }
+  .cluster-card .stat {
+    color: var(--muted);
+    font-size: 11.5px;
+  }
+
+  .arrow-down {
+    text-align: center;
+    color: var(--muted);
+    font-size: 18px;
+    margin: 6px 0;
+  }
+</style>
+</head>
+<body>
+
+<header class="page">
+  <h1>📋 완료 업무 히스토리 — 디벨롭 플랜 시각화</h1>
+  <p>단기(1·2·3) → 중기(4·5) → 장기(6·7) 순. 각 항목이 실제 화면에 어떻게 보일지 시각화.</p>
+</header>
+
+<!-- ============ 0. Before (현재) ============ -->
+<div class="phase-section">
+  <div class="phase-head">
+    <span class="phase-pill" style="background:#6b7280">Before</span>
+    <h2>📌 현재 — 비교 기준</h2>
+  </div>
+  <p class="phase-lead">카드를 클릭해야 무엇이 있는지 보임. 코멘트·진행로그·시간 데이터가 모두 숨김.</p>
+  <div class="history-card">
+    <span class="demo-label before">현재 화면</span>
+    <div class="h-title">홈쇼핑업무</div>
+    <div class="h-dates">시작 2026.04.28 · 완료 2026.05.06</div>
+    <p style="margin:8px 0 0;font-size:12.5px;color:var(--ink-soft)">설명: 현대홈쇼핑 신상품제안</p>
+    <p style="margin:6px 0 0;color:var(--muted);font-size:11.5px">▷ 클릭하여 코멘트(1) 펼치기</p>
+  </div>
+</div>
+
+<!-- ============ 1. 요약 헤더 ============ -->
+<div class="phase-section">
+  <div class="phase-head">
+    <span class="phase-pill short">1순위 단기</span>
+    <h2>📊 요약 헤더 자동 표시</h2>
+  </div>
+  <p class="phase-lead">카드를 펼치지 않아도 무엇이 있는지 즉시 파악 — 진행로그·코멘트·첨부 카운트 + 작업 기간 + KPI 표시.</p>
+
+  <div class="history-card">
+    <span class="demo-label after">After</span>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+      <div style="flex:1">
+        <div class="h-title">홈쇼핑업무 — 현대홈쇼핑 신상품제안</div>
+        <div class="h-dates">시작 2026.04.28 · 완료 2026.05.06</div>
+      </div>
+      <span style="font-size:11px;color:var(--ok);font-weight:700">✓ 완료</span>
+    </div>
+    <div class="summary-row">
+      <span class="summary-chip kpi-chip">▣ 매출 KPI</span>
+      <span class="summary-chip duration">⏱ 작업기간 <span class="num" style="color:#1e3a8a">9일</span></span>
+      <span class="summary-chip">📈 진행로그 <span class="num">5건</span></span>
+      <span class="summary-chip">💬 코멘트 <span class="num">3건</span></span>
+      <span class="summary-chip">📎 첨부 <span class="num">2개</span></span>
+      <span class="summary-chip">🔗 이전업무 <span class="num">1건</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 2. 타임라인 ============ -->
+<div class="phase-section">
+  <div class="phase-head">
+    <span class="phase-pill short">1순위 단기</span>
+    <h2>📈 가로 타임라인 시각화</h2>
+  </div>
+  <p class="phase-lead">시작 → 진행로그 점들 → 완료를 가로 축에 시각화. 점에 hover 시 그 시점 내용 미리보기.</p>
+
+  <div class="history-card">
+    <span class="demo-label after">After</span>
+    <div class="h-title">홈쇼핑업무 — 현대홈쇼핑 신상품제안</div>
+    <div class="h-dates">9일간 · 진행 5건 · 코멘트 3건</div>
+
+    <div class="timeline-wrap">
+      <div class="timeline-track">
+        <div class="timeline-line"></div>
+        <div class="timeline-dot start" style="left:0%" data-tip="📅 시작&#10;4/28 (월) 10:00"></div>
+        <div class="timeline-label start" style="left:0%">4/28 시작</div>
+
+        <div class="timeline-dot progress" style="left:14%" data-tip="📈 진행로그&#10;4/28 14:30&#10;신상품 라인업 정리 완료"></div>
+        <div class="timeline-dot comment" style="left:20%" data-tip="💬 코멘트&#10;본부장: 가격대 검토 필요&#10;4/28 16:15"></div>
+
+        <div class="timeline-dot progress" style="left:32%" data-tip="📈 진행로그&#10;4/30 09:20&#10;가격대 시뮬레이션 3안 완성&#10;[첨부 1]"></div>
+
+        <div class="timeline-dot progress" style="left:48%" data-tip="📈 진행로그&#10;5/2 11:00&#10;현대홈쇼핑 1차 미팅"></div>
+        <div class="timeline-dot comment" style="left:54%" data-tip="💬 코멘트&#10;김지수: MD 피드백 반영했습니다&#10;5/2 14:30"></div>
+
+        <div class="timeline-dot progress" style="left:70%" data-tip="📈 진행로그&#10;5/4 16:00&#10;제안서 최종본 발송&#10;[첨부 1]"></div>
+
+        <div class="timeline-dot progress" style="left:84%" data-tip="📈 진행로그&#10;5/5 10:00&#10;계약 조건 확정"></div>
+        <div class="timeline-dot comment" style="left:90%" data-tip="💬 코멘트&#10;본부장: 수고하셨습니다&#10;5/6 09:00"></div>
+
+        <div class="timeline-dot end" style="left:100%" data-tip="✓ 완료&#10;5/6 (수) 17:30"></div>
+        <div class="timeline-label end" style="left:100%">5/6 완료</div>
+      </div>
+      <div class="timeline-legend">
+        <span><span class="legend-dot lg-start"></span>시작</span>
+        <span><span class="legend-dot lg-progress"></span>진행로그 (5)</span>
+        <span><span class="legend-dot lg-comment"></span>코멘트 (3)</span>
+        <span><span class="legend-dot lg-end"></span>완료</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 3. 본문 확장 ============ -->
+<div class="phase-section">
+  <div class="phase-head">
+    <span class="phase-pill short">1순위 단기</span>
+    <h2>📂 본문 확장 — 진행로그 카드 + 코멘트 chat-style + 첨부 썸네일</h2>
+  </div>
+  <p class="phase-lead">펼친 영역에 코멘트는 카톡형 풍선, 진행로그는 카드 그리드, 이미지는 썸네일 강조.</p>
+
+  <div class="history-card">
+    <span class="demo-label after">After (펼친 상태)</span>
+    <div class="h-title">홈쇼핑업무 — 현대홈쇼핑 신상품제안</div>
+    <div class="h-dates">시작 2026.04.28 · 완료 2026.05.06 · 작업 9일</div>
+    <div class="summary-row">
+      <span class="summary-chip kpi-chip">▣ 매출 KPI</span>
+      <span class="summary-chip">📈 진행로그 5건</span>
+      <span class="summary-chip">💬 코멘트 3건</span>
+      <span class="summary-chip">📎 첨부 2개</span>
+    </div>
+
+    <div class="expanded-body">
+      <!-- 진행로그 -->
+      <div>
+        <div class="section-h">📈 진행로그 (5건)</div>
+        <div class="progress-cards">
+          <div class="progress-card">
+            <div class="head"><span>관리자</span><span>4/28 14:30</span></div>
+            <p>신상품 라인업 정리 완료. 메인 5종 + 서브 3종.</p>
+          </div>
+          <div class="progress-card">
+            <div class="head"><span>관리자</span><span>4/30 09:20</span></div>
+            <p>가격대 시뮬레이션 3안 완성. 본부장 피드백 후 1안 채택.</p>
+            <div class="thumbs">
+              <span class="thumb">PNG</span>
+            </div>
+          </div>
+          <div class="progress-card">
+            <div class="head"><span>관리자</span><span>5/2 11:00</span></div>
+            <p>현대홈쇼핑 1차 미팅. MD 김OO과 카테고리 얼라인.</p>
+          </div>
+          <div class="progress-card">
+            <div class="head"><span>관리자</span><span>5/4 16:00</span></div>
+            <p>제안서 최종본 발송. PDF 32p.</p>
+            <div class="thumbs">
+              <span class="thumb">PDF</span>
+            </div>
+          </div>
+          <div class="progress-card">
+            <div class="head"><span>관리자</span><span>5/5 10:00</span></div>
+            <p>계약 조건 확정 — MOQ 5,000개 / 마진율 38%.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 코멘트 chat-style -->
+      <div>
+        <div class="section-h">💬 코멘트 (3건) — 카카오톡 스타일</div>
+        <div class="chat-list">
+          <div class="chat-bubble is-other">
+            <div class="bubble-head"><strong>본부장</strong>4/28 16:15</div>
+            <p>가격대 검토 필요. 경쟁사 대비 ±10% 안에서 3안 만들어주세요.</p>
+          </div>
+          <div class="chat-bubble is-mine">
+            <div class="bubble-head"><strong>김지수</strong>5/2 14:30</div>
+            <p>MD 피드백 반영했습니다. 카테고리 재구성 + 가격 1안으로 갑니다.</p>
+          </div>
+          <div class="chat-bubble is-other">
+            <div class="bubble-head"><strong>본부장</strong>5/6 09:00</div>
+            <p>수고하셨습니다. 다음 분기 라인업도 부탁드려요.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 4. AI 자동 태깅 ============ -->
+<div class="phase-section">
+  <div class="phase-head">
+    <span class="phase-pill mid">중기 2~3주</span>
+    <h2>🤖 AI 자동 태깅 + 요약 카드</h2>
+  </div>
+  <p class="phase-lead">완료 처리 시점 Gemini 1회 호출 → 4가지 핵심 메타 자동 추출 → task.aiMetadata 저장.</p>
+
+  <div class="history-card">
+    <span class="demo-label after">After (펼친 상태 — AI 분석 카드 추가)</span>
+    <div class="h-title">홈쇼핑업무 — 현대홈쇼핑 신상품제안</div>
+    <div class="h-dates">시작 2026.04.28 · 완료 2026.05.06 · 작업 9일</div>
+
+    <!-- AI 요약 카드 -->
+    <div class="ai-summary-card" style="margin-top:14px">
+      <div class="ai-headline">"현대홈쇼핑 신상품 5종 입점 확정 — MOQ 5,000개·마진 38%로 매출 KPI에 직접 기여. MD 피드백 반영 후 가격대 1안 채택이 핵심 분기점."</div>
+      <div class="ai-grid">
+        <div class="ai-block">
+          <h5>📦 핵심 산출물</h5>
+          <ul>
+            <li>신상품 5종 입점 계약 (MOQ 5,000)</li>
+            <li>제안서 PDF 32p (5/4 발송)</li>
+            <li>가격 시뮬레이션 3안 → 1안 채택</li>
+          </ul>
+        </div>
+        <div class="ai-block">
+          <h5>👥 협업한 사람</h5>
+          <div class="collab-row">
+            <span class="collab-chip"><span class="av">본</span>본부장<span class="role">검토 2회</span></span>
+            <span class="collab-chip"><span class="av">김</span>김지수<span class="role">실무 1회</span></span>
+            <span class="collab-chip"><span class="av" style="background:#6b7280">M</span>현대MD<span class="role">외부</span></span>
+          </div>
+        </div>
+        <div class="ai-block">
+          <h5>⚠ 막힌 점·해결</h5>
+          <ul>
+            <li><strong>막힘</strong>: 초기 가격대가 경쟁사 대비 +18% 높음</li>
+            <li><strong>해결</strong>: 시뮬 3안으로 좁혀 본부장 피드백 반영</li>
+          </ul>
+        </div>
+        <div class="ai-block">
+          <h5>🎯 KPI 기여도</h5>
+          <div style="font-size:12px;font-weight:700;color:var(--accent)">매출 KPI</div>
+          <div class="kpi-bar">
+            <span class="track"><i style="width:78%"></i></span>
+            <span style="font-weight:700;color:var(--accent)">+78%</span>
+          </div>
+          <p style="font-size:11px;color:var(--muted);margin:4px 0 0">MOQ 5,000개 × 평균단가 → 분기 목표의 78% 기여</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 저장되는 데이터 schema -->
+    <div class="section-h" style="margin-top:18px">💾 task.aiMetadata 저장 데이터 (Firestore)</div>
+    <pre class="schema-box">{
+  <span class="key">"aiMetadata"</span>: {
+    <span class="key">"generatedAt"</span>: <span class="str">"2026-05-06T17:30:12Z"</span>,
+    <span class="key">"model"</span>: <span class="str">"gemini-2.5-flash"</span>,
+    <span class="key">"headline"</span>: <span class="str">"현대홈쇼핑 신상품 5종 입점 확정..."</span>,
+    <span class="key">"outputs"</span>: [
+      <span class="str">"신상품 5종 입점 계약 (MOQ 5,000)"</span>,
+      <span class="str">"제안서 PDF 32p"</span>,
+      <span class="str">"가격 시뮬레이션 3안 → 1안 채택"</span>
+    ],
+    <span class="key">"collaborators"</span>: [
+      { <span class="key">"uid"</span>: <span class="str">"hq_director"</span>, <span class="key">"role"</span>: <span class="str">"검토"</span>, <span class="key">"count"</span>: <span class="num">2</span> },
+      { <span class="key">"uid"</span>: <span class="str">"kim_jisu"</span>, <span class="key">"role"</span>: <span class="str">"실무"</span>, <span class="key">"count"</span>: <span class="num">1</span> },
+      { <span class="key">"name"</span>: <span class="str">"현대 MD"</span>, <span class="key">"role"</span>: <span class="str">"외부"</span> }
+    ],
+    <span class="key">"blockers"</span>: [
+      { <span class="key">"issue"</span>: <span class="str">"초기 가격대 경쟁사 +18% 높음"</span>,
+        <span class="key">"resolution"</span>: <span class="str">"시뮬 3안 → 본부장 피드백 반영"</span> }
+    ],
+    <span class="key">"kpiContribution"</span>: {
+      <span class="key">"label"</span>: <span class="str">"매출"</span>,
+      <span class="key">"contributionPct"</span>: <span class="num">78</span>,
+      <span class="key">"summary"</span>: <span class="str">"MOQ 5,000 × 평균단가 → 분기 목표의 78%"</span>
+    }
+    <span class="cmt">// task당 1회만 생성, 재호출 안 함 (비용 제한)</span>
+  }
+}</pre>
+  </div>
+</div>
+
+<!-- ============ 5. AI 요약 카드 (상단 카드) ============ -->
+<div class="phase-section">
+  <div class="phase-head">
+    <span class="phase-pill mid">중기 2~3주</span>
+    <h2>📝 AI 요약 카드 — 카드 펼친 영역 최상단</h2>
+  </div>
+  <p class="phase-lead">각 history 카드를 펼치면 AI 분석이 첫 화면. 상세 (진행로그·코멘트)는 그 아래.</p>
+
+  <div class="history-card">
+    <span class="demo-label after">펼친 상태 — 정렬 순서</span>
+    <div class="h-title">홈쇼핑업무 — 현대홈쇼핑 신상품제안</div>
+    <div class="h-dates">9일 · 매출 KPI 78% 기여</div>
+
+    <div class="ai-summary-card" style="margin-top:12px">
+      <div class="ai-headline">🎯 핵심: MOQ 5,000개 × 마진 38% 입점 확정. 매출 KPI 78% 기여.</div>
+      <p style="margin:0;font-size:12px;color:var(--ink-soft);line-height:1.55">초기 가격이 경쟁사 +18%로 막혔으나 시뮬 3안으로 분기점 돌파. 본부장 검토 2회·김지수 실무 1회 협업 끝에 5/6 완료.</p>
+      <div style="margin-top:8px;font-size:11px;color:var(--muted)">↓ 아래에 진행로그·코멘트 상세 있음</div>
+    </div>
+
+    <div class="arrow-down">↓</div>
+
+    <div class="section-h">📈 진행로그 (5) · 💬 코멘트 (3) · 📎 첨부 (2)</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:6px">위 AI 요약을 보고 필요할 때만 상세 펼침</div>
+    <div class="progress-cards" style="opacity:0.55">
+      <div class="progress-card"><div class="head"><span>관리자</span><span>4/28</span></div><p>신상품 라인업 정리...</p></div>
+      <div class="progress-card"><div class="head"><span>관리자</span><span>4/30</span></div><p>가격 시뮬 3안...</p></div>
+      <div class="progress-card"><div class="head"><span>관리자</span><span>5/2</span></div><p>1차 미팅...</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 6+7. 검색·필터·묶음·export ============ -->
+<div class="phase-section">
+  <div class="phase-head">
+    <span class="phase-pill long">장기 1달+</span>
+    <h2>🔍 검색·필터·KPI 묶음 보기 + Export</h2>
+  </div>
+  <p class="phase-lead">데이터가 누적된 후 가치 발현 — 키워드 검색, KPI/부서/기간 필터, 클러스터 뷰, CSV/JSON export.</p>
+
+  <div class="history-card">
+    <span class="demo-label after">필터/검색 패널</span>
+    <div class="filter-panel">
+      <input type="search" placeholder="🔍 키워드 검색 (업무명·진행내용·코멘트·산출물)" value="홈쇼핑">
+      <select>
+        <option>모든 KPI</option>
+        <option selected>매출</option>
+        <option>신규소싱</option>
+      </select>
+      <select>
+        <option>모든 부서</option>
+        <option>커머스 1팀</option>
+      </select>
+      <select>
+        <option>전체 기간</option>
+        <option selected>2026 2분기</option>
+      </select>
+    </div>
+
+    <div class="section-h" style="margin-top:14px">🗂 KPI별 클러스터 (검색 결과 · 매출 KPI · 2분기)</div>
+    <div class="cluster-grid">
+      <div class="cluster-card">
+        <strong>현대홈쇼핑 신상품제안</strong>
+        <div class="stat">5/6 완료 · 9일 · KPI 78%</div>
+      </div>
+      <div class="cluster-card">
+        <strong>롯데홈쇼핑 신상품제안</strong>
+        <div class="stat">5/12 완료 · 7일 · KPI 64%</div>
+      </div>
+      <div class="cluster-card">
+        <strong>2분기 라이브 캠페인</strong>
+        <div class="stat">진행 중 · D-3 · KPI 예상 +45%</div>
+      </div>
+    </div>
+
+    <div class="section-h" style="margin-top:14px">📤 데이터 내보내기</div>
+    <div style="display:flex;gap:8px">
+      <button style="padding:6px 14px;background:white;border:1px solid var(--line);border-radius:6px;cursor:pointer;font-size:12px">📊 CSV (스프레드시트)</button>
+      <button style="padding:6px 14px;background:white;border:1px solid var(--line);border-radius:6px;cursor:pointer;font-size:12px">📋 JSON (raw + AI 메타)</button>
+      <button style="padding:6px 14px;background:white;border:1px solid var(--line);border-radius:6px;cursor:pointer;font-size:12px">📑 PDF 회고 보고서</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 진행 순서 요약 ============ -->
+<div class="phase-section" style="margin-top:30px">
+  <div class="phase-head">
+    <span class="phase-pill" style="background:var(--accent)">▶ 권장 진행 순서</span>
+  </div>
+  <table style="width:100%;border-collapse:collapse;margin-top:8px;background:white;border:1px solid var(--line);border-radius:10px;overflow:hidden">
+    <thead>
+      <tr style="background:var(--accent-soft);color:var(--accent)">
+        <th style="padding:10px 14px;text-align:left;font-size:12px">단계</th>
+        <th style="padding:10px 14px;text-align:left;font-size:12px">항목</th>
+        <th style="padding:10px 14px;text-align:left;font-size:12px">예상 작업</th>
+        <th style="padding:10px 14px;text-align:left;font-size:12px">결과</th>
+      </tr>
+    </thead>
+    <tbody style="font-size:12.5px">
+      <tr><td style="padding:10px 14px;border-top:1px solid var(--line)"><span class="phase-pill short" style="font-size:10px">1차</span></td><td style="padding:10px 14px;border-top:1px solid var(--line)">요약 헤더 + 타임라인 + 본문 확장</td><td style="padding:10px 14px;border-top:1px solid var(--line)">UI 1~2일</td><td style="padding:10px 14px;border-top:1px solid var(--line);color:var(--accent);font-weight:700">사람 가시성 즉각 ↑</td></tr>
+      <tr><td style="padding:10px 14px;border-top:1px solid var(--line)"><span class="phase-pill mid" style="font-size:10px">2차</span></td><td style="padding:10px 14px;border-top:1px solid var(--line)">AI 자동 태깅 (완료 시 1회) + 요약 카드</td><td style="padding:10px 14px;border-top:1px solid var(--line)">prompt 설계 + schema + trigger 3~4일</td><td style="padding:10px 14px;border-top:1px solid var(--line);color:var(--info);font-weight:700">데이터 축적 시작</td></tr>
+      <tr><td style="padding:10px 14px;border-top:1px solid var(--line)"><span class="phase-pill long" style="font-size:10px">3차</span></td><td style="padding:10px 14px;border-top:1px solid var(--line)">검색·필터·클러스터·export</td><td style="padding:10px 14px;border-top:1px solid var(--line)">데이터 누적 후 1~2주</td><td style="padding:10px 14px;border-top:1px solid var(--line);color:#9333ea;font-weight:700">분석/보고 자료화</td></tr>
+    </tbody>
+  </table>
+</div>
+
+</body>
+</html>

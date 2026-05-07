@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>점검 신호 — 지연 + 결재 대기 (3가지 레이아웃)</title>
+<style>
+  body {
+    margin: 0;
+    padding: 32px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Pretendard, sans-serif;
+    background: #f5f7f6;
+    color: #18211d;
+    font-size: 13px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: #6b7280; margin: 0 0 22px; font-size: 13px; }
+
+  .layout-tabs { display: flex; gap: 6px; margin-bottom: 18px; }
+  .layout-tab {
+    padding: 8px 16px;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px 8px 0 0;
+    cursor: pointer;
+    font-weight: 600;
+    color: #6b7280;
+    font-size: 13px;
+  }
+  .layout-tab.active {
+    background: #14b8a6;
+    color: white;
+    border-color: #14b8a6;
+  }
+
+  .panel {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 22px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    max-width: 1100px;
+    margin-bottom: 24px;
+  }
+  .panel-head {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 18px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #f3f4f6;
+  }
+  .panel-head h2 { font-size: 16px; margin: 0; }
+  .panel-head .icon { color: #14b8a6; font-size: 18px; }
+  .total-count {
+    margin-left: auto;
+    font-size: 12px;
+    color: #6b7280;
+    background: #f3f4f6;
+    padding: 4px 10px;
+    border-radius: 999px;
+  }
+
+  .sig-delay { color: #dc2626; }
+  .sig-review { color: #ca8a04; }
+
+  .team-chip {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .team-chip.commerce { background: rgba(59,130,246,0.12); color: #1e40af; }
+  .team-chip.retail { background: rgba(245,158,11,0.15); color: #92400e; }
+  .team-chip.strategy { background: rgba(20,184,166,0.15); color: #0d7a6e; }
+
+  .blocked-tag {
+    display: inline-block;
+    padding: 1px 6px;
+    background: rgba(220,38,38,0.15);
+    color: #b91c1c;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    margin-left: 4px;
+  }
+  .stale-tag {
+    display: inline-block;
+    padding: 1px 6px;
+    background: rgba(245,158,11,0.15);
+    color: #b45309;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    margin-left: 4px;
+  }
+
+  /* ───── 레이아웃 A: 2-column ───── */
+  .layout-a {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 12px;
+  }
+  .layout-a .col {
+    background: #fafbfa;
+    border-radius: 8px;
+    padding: 14px;
+  }
+  .layout-a .col-head {
+    display: flex; align-items: center; gap: 6px;
+    font-weight: 700; font-size: 13px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px dashed #e5e7eb;
+  }
+  .layout-a .col-head .count {
+    margin-left: auto;
+    background: white;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .layout-a .item {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .layout-a .item:hover { border-color: rgba(20,184,166,0.5); transform: translateX(2px); }
+  .layout-a .item-title { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+  .layout-a .item-meta { font-size: 11px; color: #6b7280; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .layout-a .delay-border { border-left: 3px solid #dc2626; }
+  .layout-a .review-border { border-left: 3px solid #ca8a04; }
+
+  /* ───── 레이아웃 B: 아코디언 ───── */
+  .layout-b .section {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    overflow: hidden;
+  }
+  .layout-b .section-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 16px;
+    background: #fafbfa;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 13px;
+  }
+  .layout-b .section-head .count {
+    margin-left: auto; margin-right: 8px;
+    background: white;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+  }
+  .layout-b .section.open .section-body { display: block; }
+  .layout-b .section-body { display: none; padding: 8px 16px 12px; background: white; }
+  .layout-b .section.open .toggle::before { content: '▼'; }
+  .layout-b .toggle { font-size: 10px; color: #9ca3af; }
+  .layout-b .toggle::before { content: '▶'; }
+  .layout-b .item-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 0;
+    border-bottom: 1px solid #f3f4f6;
+    font-size: 12px;
+  }
+  .layout-b .item-row:last-child { border-bottom: none; }
+  .layout-b .item-row strong { font-weight: 600; }
+  .layout-b .item-row .delay { color: #6b7280; font-size: 11px; margin-left: auto; }
+
+  /* ───── 레이아웃 C: 탭 전환 ───── */
+  .layout-c .signal-tabs {
+    display: flex; gap: 6px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .layout-c .signal-tab {
+    padding: 8px 16px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 13px;
+    color: #6b7280;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .layout-c .signal-tab.active {
+    color: #18211d;
+    border-bottom-color: #14b8a6;
+  }
+  .layout-c .signal-tab .count {
+    background: #e5e7eb;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    margin-left: 4px;
+  }
+  .layout-c .signal-tab.active .count {
+    background: #14b8a6;
+    color: white;
+  }
+  .layout-c .signal-content > div { display: none; }
+  .layout-c .signal-content > div.active { display: block; }
+  .layout-c .item-card {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 12px;
+    background: #fafbfa;
+    border-radius: 6px;
+    margin-bottom: 6px;
+    cursor: pointer;
+  }
+  .layout-c .item-card:hover { background: rgba(20,184,166,0.06); }
+  .layout-c .item-card-main { flex: 1; }
+  .layout-c .item-card-title { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+  .layout-c .item-card-meta { font-size: 11px; color: #6b7280; }
+
+  .annotation {
+    margin: 16px 0 0;
+    padding: 12px 14px;
+    background: #f3f4f6;
+    border-radius: 6px;
+    font-size: 11px;
+    color: #6b7280;
+    line-height: 1.6;
+  }
+  .annotation strong { color: #374151; }
+
+  /* 추가 아이디어 섹션 */
+  .ideas-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    max-width: 1100px;
+  }
+  .idea-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .idea-card h3 {
+    font-size: 14px;
+    margin: 0 0 6px;
+    color: #14b8a6;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .idea-card p {
+    font-size: 12px;
+    color: #4b5563;
+    line-height: 1.6;
+    margin: 6px 0 0;
+  }
+  .idea-card .priority {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 600;
+    margin-left: auto;
+  }
+  .idea-card .priority.high { background: rgba(220,38,38,0.12); color: #b91c1c; }
+  .idea-card .priority.med { background: rgba(245,158,11,0.15); color: #b45309; }
+  .idea-card .priority.low { background: rgba(20,184,166,0.12); color: #0d7a6e; }
+</style>
+</head>
+<body>
+
+<h1>점검 신호 — 지연 + 결재 대기 (최종 구조)</h1>
+<p class="lead">막힘/방치 → "지연" 통합. blocked가 위로, 일자 내림차순 정렬. 본부장이 위에서부터 처리.</p>
+
+<div class="layout-tabs">
+  <button class="layout-tab active" onclick="showLayout('A', this)">레이아웃 A — 2-column 가로</button>
+  <button class="layout-tab" onclick="showLayout('B', this)">레이아웃 B — 세로 아코디언</button>
+  <button class="layout-tab" onclick="showLayout('C', this)">레이아웃 C — 탭 전환</button>
+</div>
+
+<!-- ============ 레이아웃 A: 2-column ============ -->
+<div class="panel" id="layout-A">
+  <div class="panel-head">
+    <span class="icon">🚦</span>
+    <h2>점검 신호</h2>
+    <span class="total-count">전체 6건 · 부서: 커머스 2 · 리테일 2 · 전략 2</span>
+  </div>
+
+  <div class="layout-a">
+    <div class="col">
+      <div class="col-head">
+        <span class="sig-delay">⚠️ 지연</span>
+        <span class="count" style="background:#fee2e2;color:#dc2626;">5</span>
+      </div>
+      <!-- blocked가 먼저 (사용자 명시 신호 우선) -->
+      <div class="item delay-border">
+        <div class="item-title">고객사 기획 <span class="blocked-tag">막힘</span></div>
+        <div class="item-meta">
+          <span class="team-chip commerce">커머스</span>
+          <span>김동근</span>
+          <span>· 2일째</span>
+        </div>
+      </div>
+      <div class="item delay-border">
+        <div class="item-title">발주 검토 <span class="blocked-tag">막힘</span></div>
+        <div class="item-meta">
+          <span class="team-chip retail">리테일</span>
+          <span>이팀원</span>
+          <span>· 3일째</span>
+        </div>
+      </div>
+      <div class="item delay-border">
+        <div class="item-title">인터뷰 일정 <span class="blocked-tag">막힘</span></div>
+        <div class="item-meta">
+          <span class="team-chip strategy">전략</span>
+          <span>박팀원</span>
+          <span>· 1일째</span>
+        </div>
+      </div>
+      <!-- 무활동 (오래된 순) -->
+      <div class="item delay-border">
+        <div class="item-title">KPI 산출 <span class="stale-tag">무활동</span></div>
+        <div class="item-meta">
+          <span class="team-chip retail">리테일</span>
+          <span>김팀원</span>
+          <span>· 12일째</span>
+        </div>
+      </div>
+      <div class="item delay-border">
+        <div class="item-title">분석 시작 <span class="stale-tag">무활동</span></div>
+        <div class="item-meta">
+          <span class="team-chip strategy">전략</span>
+          <span>박팀원</span>
+          <span>· 8일째</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="col-head">
+        <span class="sig-review">🟡 결재 대기</span>
+        <span class="count" style="background:#fef9c3;color:#a16207;">1</span>
+      </div>
+      <div class="item review-border">
+        <div class="item-title">보고서 1차안</div>
+        <div class="item-meta">
+          <span class="team-chip commerce">커머스</span>
+          <span>이팀원</span>
+          <span>· 6시간 대기</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="annotation">
+    <strong>레이아웃 A:</strong> 지연이 메인(2/3) + 결재 대기 보조(1/3). 카테고리 2개라 컬럼 폭 여유 있음.
+  </div>
+</div>
+
+<!-- ============ 레이아웃 B: 아코디언 ============ -->
+<div class="panel" id="layout-B" style="display:none;">
+  <div class="panel-head">
+    <span class="icon">🚦</span>
+    <h2>점검 신호</h2>
+    <span class="total-count">전체 6건 · 부서: 커머스 2 · 리테일 2 · 전략 2</span>
+  </div>
+
+  <div class="layout-b">
+    <div class="section open">
+      <div class="section-head sig-delay" onclick="toggleSection(this)">
+        <span class="toggle"></span>
+        ⚠️ 지연
+        <span class="count" style="background:#fee2e2;color:#dc2626;">5</span>
+      </div>
+      <div class="section-body">
+        <div class="item-row">
+          <span class="team-chip commerce">커머스</span>
+          <strong>김동근</strong> · 고객사 기획 <span class="blocked-tag">막힘</span>
+          <span class="delay">2일째</span>
+        </div>
+        <div class="item-row">
+          <span class="team-chip retail">리테일</span>
+          <strong>이팀원</strong> · 발주 검토 <span class="blocked-tag">막힘</span>
+          <span class="delay">3일째</span>
+        </div>
+        <div class="item-row">
+          <span class="team-chip strategy">전략</span>
+          <strong>박팀원</strong> · 인터뷰 일정 <span class="blocked-tag">막힘</span>
+          <span class="delay">1일째</span>
+        </div>
+        <div class="item-row">
+          <span class="team-chip retail">리테일</span>
+          <strong>김팀원</strong> · KPI 산출 <span class="stale-tag">무활동</span>
+          <span class="delay">12일째</span>
+        </div>
+        <div class="item-row">
+          <span class="team-chip strategy">전략</span>
+          <strong>박팀원</strong> · 분석 시작 <span class="stale-tag">무활동</span>
+          <span class="delay">8일째</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section open">
+      <div class="section-head sig-review" onclick="toggleSection(this)">
+        <span class="toggle"></span>
+        🟡 결재 대기
+        <span class="count" style="background:#fef9c3;color:#a16207;">1</span>
+      </div>
+      <div class="section-body">
+        <div class="item-row">
+          <span class="team-chip commerce">커머스</span>
+          <strong>이팀원</strong> · 보고서 1차안
+          <span class="delay">6시간 대기</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="annotation">
+    <strong>레이아웃 B:</strong> 한 줄=1 task. 컴팩트하고 정보 풍부. 섹션 헤더 클릭으로 접기/펼침.
+  </div>
+</div>
+
+<!-- ============ 레이아웃 C: 탭 전환 ============ -->
+<div class="panel" id="layout-C" style="display:none;">
+  <div class="panel-head">
+    <span class="icon">🚦</span>
+    <h2>점검 신호</h2>
+    <span class="total-count">전체 6건 · 부서: 커머스 2 · 리테일 2 · 전략 2</span>
+  </div>
+
+  <div class="layout-c">
+    <div class="signal-tabs">
+      <button class="signal-tab active" onclick="showSignal('delay', this)">
+        <span class="sig-delay">⚠️ 지연</span> <span class="count">5</span>
+      </button>
+      <button class="signal-tab" onclick="showSignal('review', this)">
+        <span class="sig-review">🟡 결재 대기</span> <span class="count">1</span>
+      </button>
+    </div>
+
+    <div class="signal-content">
+      <div class="active" data-signal="delay">
+        <div class="item-card">
+          <span class="team-chip commerce">커머스</span>
+          <div class="item-card-main">
+            <div class="item-card-title">고객사 기획 <span class="blocked-tag">막힘</span></div>
+            <div class="item-card-meta">김동근 · 2일째 · 막힘 사유: 일정 조율 안 됨</div>
+          </div>
+        </div>
+        <div class="item-card">
+          <span class="team-chip retail">리테일</span>
+          <div class="item-card-main">
+            <div class="item-card-title">발주 검토 <span class="blocked-tag">막힘</span></div>
+            <div class="item-card-meta">이팀원 · 3일째 · 막힘 사유: 가격 협상 대기</div>
+          </div>
+        </div>
+        <div class="item-card">
+          <span class="team-chip strategy">전략</span>
+          <div class="item-card-main">
+            <div class="item-card-title">인터뷰 일정 <span class="blocked-tag">막힘</span></div>
+            <div class="item-card-meta">박팀원 · 1일째</div>
+          </div>
+        </div>
+        <div class="item-card">
+          <span class="team-chip retail">리테일</span>
+          <div class="item-card-main">
+            <div class="item-card-title">KPI 산출 <span class="stale-tag">무활동</span></div>
+            <div class="item-card-meta">김팀원 · 12일째 · doing 상태로 멈춤</div>
+          </div>
+        </div>
+        <div class="item-card">
+          <span class="team-chip strategy">전략</span>
+          <div class="item-card-main">
+            <div class="item-card-title">분석 시작 <span class="stale-tag">무활동</span></div>
+            <div class="item-card-meta">박팀원 · 8일째 · 코멘트도 없음</div>
+          </div>
+        </div>
+      </div>
+
+      <div data-signal="review">
+        <div class="item-card">
+          <span class="team-chip commerce">커머스</span>
+          <div class="item-card-main">
+            <div class="item-card-title">보고서 1차안</div>
+            <div class="item-card-meta">이팀원 · 6시간 대기 · review 요청 — 결재 필요</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="annotation">
+    <strong>레이아웃 C:</strong> 탭 전환으로 한 신호씩 집중. 가장 컴팩트.
+  </div>
+</div>
+
+<!-- ============ 추가 아이디어 ============ -->
+<h1 style="margin-top:48px;">💡 업무 관리 도움 — 추가 아이디어</h1>
+<p class="lead">위 점검 신호 외에 본부장 업무 관리에 가장 가치 있을 만한 기능들. 우선순위 매김.</p>
+
+<div class="ideas-grid">
+
+  <div class="idea-card">
+    <h3>🔥 외부 의존 분리 <span class="priority high">고</span></h3>
+    <p>
+      막힘 task 중 "외부 응답 대기" (예: 거래처·다른 부서·시스템 작업) 인 것은 별도 표시.
+      <strong>본인 노력으로 안 풀리는 것</strong>이라 본부장이 외부에 직접 개입해야 하는 신호.
+      현재 막힘 사유 텍스트 분석 또는 별도 태그 필드 도입.
+    </p>
+  </div>
+
+  <div class="idea-card">
+    <h3>📥 본부장 코멘트 답변 인박스 <span class="priority high">고</span></h3>
+    <p>
+      본부장이 단 코멘트의 답변 모니터링 화면. <strong>"내가 물어본 거 답변 왔나?"</strong> 한눈에.
+      답변 없는 코멘트 N일 이상 → 빨간 표시. 답변 있는 건 위로.
+      → 의사소통 누락 방지.
+    </p>
+  </div>
+
+  <div class="idea-card">
+    <h3>📊 부서별 워크로드 균형 <span class="priority high">고</span></h3>
+    <p>
+      부서별로 활성 task 수, 지연 비율, 평균 완료일 자동 집계.
+      <strong>한 부서가 과부하인지 발견</strong>. 매주 자동 업데이트.
+      KPI 평가 회의 때 객관적 자료로 활용 가능.
+    </p>
+  </div>
+
+  <div class="idea-card">
+    <h3>🧑 개인 부담도 신호 <span class="priority med">중</span></h3>
+    <p>
+      한 사람의 지연 task가 N건(예: 3건) 이상이면 본부장 알림.
+      <strong>번아웃 예방 + 인력 재배치 신호</strong>.
+      이름 클릭 → 그 팀원의 task 전체 펼침.
+    </p>
+  </div>
+
+  <div class="idea-card">
+    <h3>📅 주간 자동 회고 <span class="priority med">중</span></h3>
+    <p>
+      매주 금요일 17시 자동 생성. <strong>"이번 주 완료 N건, 지연 M건, 신규 K건"</strong>.
+      부서별 / KPI별 진척률. 다음 주 carry-over task 자동 안내.
+      Gemini로 짧은 인사이트 한 단락 추가 (예: "이번 주 커머스 부서 지연 비율이 평소 대비 ↑").
+    </p>
+  </div>
+
+  <div class="idea-card">
+    <h3>⏱ 막힘 해소 시간 분석 <span class="priority med">중</span></h3>
+    <p>
+      task가 blocked → doing으로 풀리는데 평균 며칠 걸리는지 추적.
+      <strong>병목 패턴 발견</strong> — "리테일 부서는 평균 5일", "전략 부서는 1일" 같은 통계.
+      의사결정 속도 개선 자료.
+    </p>
+  </div>
+
+  <div class="idea-card">
+    <h3>🎯 KPI 진행 현황 한 줄 <span class="priority med">중</span></h3>
+    <p>
+      모든 KPI를 한 줄씩 진행률 바로 시각화. <strong>"커머스팀 매출 KPI: ▓▓▓░░ 60%"</strong>.
+      페이지 상단에 항상 노출. 진행 안 되는 KPI는 빨간 강조.
+      현재 KPI 카드는 정보 풍부하지만 한눈 비교가 약함.
+    </p>
+  </div>
+
+  <div class="idea-card">
+    <h3>🔁 위임 큐 <span class="priority low">하</span></h3>
+    <p>
+      본부장이 코멘트로 "X 해주세요" 같은 지시를 한 task만 모음.
+      <strong>"내가 시킨 일 어디까지 갔나"</strong> 추적용.
+      기능 분리하면 본부장 액션 history 명확.
+    </p>
+  </div>
+
+</div>
+
+<script>
+  function showLayout(id, btn) {
+    ['A', 'B', 'C'].forEach(k => {
+      document.getElementById('layout-' + k).style.display = k === id ? 'block' : 'none';
+    });
+    document.querySelectorAll('.layout-tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  function toggleSection(headEl) {
+    headEl.parentElement.classList.toggle('open');
+  }
+  function showSignal(name, btn) {
+    document.querySelectorAll('.signal-tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.signal-content > div').forEach(d => d.classList.remove('active'));
+    document.querySelector(`.signal-content > [data-signal="${name}"]`).classList.add('active');
+  }
+</script>
+
+</body>
+</html>

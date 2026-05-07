@@ -1,0 +1,906 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>이번 주 업무 카드 — 레이아웃 제안 + 드래그 편집</title>
+<style>
+  :root {
+    --line: #e3e8e5;
+    --line-strong: #cfd6d2;
+    --ink: #18211d;
+    --ink-soft: #4d5b54;
+    --muted: #7a857f;
+    --accent: #0d7a6e;
+    --accent-soft: #e6f4f1;
+    --warn: #f59e0b;
+    --warn-soft: #fef3c7;
+    --warn-strong: #b45309;
+    --info: #3b82f6;
+    --info-soft: #dbeafe;
+    --danger: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #f5f7f6;
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 28px;
+  }
+  header.page {
+    margin-bottom: 22px;
+  }
+  header.page h1 { margin: 0 0 4px; font-size: 20px; }
+  header.page p { margin: 0; color: var(--muted); }
+
+  /* === 카드 공통 === */
+  .card {
+    background: white;
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--info);
+    border-radius: 12px;
+    padding: 14px 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    margin-bottom: 16px;
+    max-width: 720px;
+  }
+  .card.focus { border-left-color: var(--warn); }
+
+  /* 칩/배지 공통 */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid var(--line-strong);
+    background: white;
+    color: var(--ink-soft);
+    white-space: nowrap;
+  }
+  .chip.status-doing { background: var(--info-soft); color: #1e3a8a; border-color: var(--info); }
+  .chip.priority { background: var(--info-soft); color: #1e3a8a; border-color: var(--info); }
+  .chip.focus { background: var(--warn-soft); color: var(--warn-strong); border-color: var(--warn); font-weight: 700; }
+  .chip.kpi { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); font-weight: 700; }
+  .chip.progress-count { background: #d1fae5; color: #065f46; border-color: #10b981; }
+  .chip.comment-count { background: #f3f4f6; color: var(--ink-soft); }
+  .chip.due-warn { background: var(--warn-soft); color: var(--warn-strong); border-color: var(--warn); font-weight: 700; }
+  .chip.due-danger { background: #fee2e2; color: #b91c1c; border-color: var(--danger); font-weight: 700; }
+  .chip.due-ok { background: #f3f4f6; color: var(--ink-soft); }
+  .chip.owner {
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-color: var(--accent);
+    border-radius: 999px;
+    padding: 2px 4px 2px 8px;
+  }
+  .chip.owner .av {
+    width: 16px;
+    height: 16px;
+    background: #6b7280;
+    color: white;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-weight: 700;
+  }
+  .btn-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 10px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    background: white;
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 13px;
+  }
+
+  /* ============ V1: KPI 상단 + 메타 한 줄 클러스터 ============ */
+  .v1-card .top-kpi {
+    margin: -14px -16px 12px;
+    padding: 6px 16px;
+    background: var(--accent-soft);
+    border-bottom: 1px solid rgba(13, 122, 110, 0.18);
+    border-radius: 10px 10px 0 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  .v1-card .title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+  .v1-card .title { font-weight: 700; font-size: 14px; flex: 1; }
+  .v1-card .detail { color: var(--ink-soft); font-size: 12.5px; margin: 4px 0 12px; }
+  .v1-card .meta-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .v1-card .meta-divider { color: var(--line-strong); }
+  .v1-card .right-cluster {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* ============ V2: 마감 좌측 컬러바 강조 ============ */
+  .v2-card { padding: 0; overflow: hidden; }
+  .v2-card .row {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    align-items: stretch;
+  }
+  .v2-card .due-bar {
+    background: var(--warn);
+    color: white;
+    text-align: center;
+    padding: 10px 6px;
+    font-weight: 700;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 2px;
+  }
+  .v2-card .due-bar .d-day { font-size: 18px; }
+  .v2-card .due-bar .d-label { font-size: 10px; font-weight: 500; opacity: 0.95; }
+  .v2-card .due-bar.danger { background: var(--danger); }
+  .v2-card .due-bar.normal { background: #6b7280; }
+  .v2-card .body { padding: 12px 14px; }
+  .v2-card .top-kpi {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .v2-card .title { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+  .v2-card .detail { color: var(--ink-soft); font-size: 12.5px; margin-bottom: 10px; }
+  .v2-card .meta-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .v2-card .right-cluster { margin-left: auto; display: flex; gap: 6px; }
+
+  /* ============ V3: 우상단에 마감 + 우선순위 묶음 ============ */
+  .v3-card { position: relative; }
+  .v3-card .top-kpi {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    background: var(--accent);
+    color: white;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .v3-card .top-right-cluster {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .v3-card .title-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .v3-card .title { font-weight: 700; font-size: 14px; }
+  .v3-card .detail { color: var(--ink-soft); font-size: 12.5px; margin-bottom: 10px; }
+  .v3-card .meta-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding-top: 8px;
+    border-top: 1px dashed var(--line);
+  }
+  .v3-card .meta-row .right { margin-left: auto; display: flex; gap: 6px; }
+
+  /* ============ 비교 + 추천 ============ */
+  .label-pill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    color: white;
+    margin-right: 8px;
+  }
+  .label-pill.v1 { background: var(--accent); }
+  .label-pill.v2 { background: var(--warn); }
+  .label-pill.v3 { background: var(--info); }
+
+  h2 { font-size: 16px; margin: 30px 0 8px; display: flex; align-items: center; }
+  .lead { color: var(--muted); margin: 0 0 12px; font-size: 12.5px; }
+
+  /* ============ 드래그 편집기 ============ */
+  .editor-wrap {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 24px;
+    margin-top: 16px;
+  }
+  .palette {
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px;
+    height: fit-content;
+  }
+  .palette h3 { margin: 0 0 8px; font-size: 13px; }
+  .palette p { margin: 0 0 10px; font-size: 11px; color: var(--muted); }
+  .palette-items {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .palette-item {
+    cursor: grab;
+    padding: 6px 10px;
+    border: 1px dashed var(--line-strong);
+    border-radius: 8px;
+    font-size: 12px;
+    background: white;
+    user-select: none;
+  }
+  .palette-item:active { cursor: grabbing; }
+  .palette-item.dragging { opacity: 0.4; }
+  .palette-item .key { color: var(--muted); font-size: 10.5px; margin-left: 4px; }
+
+  /* 편집기 카드 */
+  .editor-card {
+    background: white;
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--info);
+    border-radius: 12px;
+    padding: 14px 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    min-height: 220px;
+  }
+  .slot {
+    border: 1.5px dashed var(--line-strong);
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    background: #fafbfa;
+  }
+  .slot.drag-over {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .slot::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 10px;
+    margin-right: 6px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+  }
+  .slot:empty::after { content: '여기에 드래그하여 배치'; color: #9ca3af; font-size: 11px; font-style: italic; }
+  .slot:not(:empty)::after { content: none; }
+
+  .placed-item {
+    cursor: grab;
+    user-select: none;
+  }
+  .placed-item.dragging { opacity: 0.4; }
+
+  .editor-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .editor-actions button {
+    padding: 6px 14px;
+    background: white;
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .editor-actions button.primary {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+  }
+
+  /* 추천 박스 */
+  .recommend {
+    margin-top: 18px;
+    padding: 14px 18px;
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+  }
+  .recommend strong { color: var(--accent); }
+
+  /* === 실시간 미리보기 카드 (실제 적용될 모습) === */
+  .live-preview-wrap {
+    margin-top: 22px;
+    padding: 16px 18px;
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+  }
+  .live-preview-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+  .live-preview-head h3 { margin: 0; font-size: 14px; }
+  .sim-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+  .sim-btn {
+    padding: 4px 10px;
+    background: white;
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--ink-soft);
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .sim-btn.active {
+    background: var(--ink);
+    color: white;
+    border-color: var(--ink);
+  }
+  .sim-btn[data-sim="due-soon"].active { background: var(--danger); border-color: var(--danger); }
+  .sim-btn[data-sim="done"].active { background: #10b981; border-color: #10b981; }
+
+  /* 카드 본체 — V1+V2 hybrid */
+  .preview-card {
+    margin-top: 14px;
+    background: white;
+    border: 1px solid var(--line);
+    border-left: 12px solid #3b82f6; /* 기본 진행=파랑 */
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    padding: 0;
+    overflow: hidden;
+    position: relative;
+    max-width: 720px;
+  }
+  .preview-card.sim-todo { border-left-color: #9ca3af; }       /* 대기 = 회색 */
+  .preview-card.sim-doing { border-left-color: #3b82f6; }      /* 진행 = 파랑 */
+  .preview-card.sim-review { border-left-color: #f59e0b; }     /* 검토 = 주황 */
+  .preview-card.sim-blocked { border-left-color: #ef4444; }    /* 막힘 = 빨강 */
+  .preview-card.sim-done { border-left-color: #10b981; }       /* 완료 = 초록 */
+  .preview-card.sim-due-soon { border-left-color: #ef4444 !important; }
+
+  /* D-day 좌측 강조바 (V2 스타일 — 마감 임박 시) */
+  .preview-card.sim-due-soon::before {
+    content: 'D-3\A 임박';
+    white-space: pre;
+    position: absolute;
+    top: 0; bottom: 0; left: -12px;
+    width: 38px;
+    background: #ef4444;
+    color: white;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: center;
+    z-index: 1;
+    border-radius: 6px 0 0 6px;
+  }
+  .preview-card.sim-due-soon .preview-section { padding-left: 36px; }
+
+  /* 미리보기 섹션 (slot에 1:1 대응) */
+  .preview-section {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .preview-section:last-child { border-bottom: none; }
+  .preview-section.preview-top {
+    background: var(--accent-soft);
+    border-bottom: 1px solid rgba(13, 122, 110, 0.18);
+    padding: 6px 14px;
+  }
+  .preview-section.preview-title {
+    font-weight: 700;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    border-bottom: none;
+    padding-bottom: 4px;
+  }
+  .preview-section.preview-detail {
+    color: var(--ink-soft);
+    font-size: 12.5px;
+    border-bottom: none;
+    padding-top: 0;
+  }
+  .preview-section.preview-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    border-bottom: none;
+    border-top: 1px dashed var(--line);
+    padding-top: 8px;
+  }
+  .preview-section.preview-meta-left { border-top: 1px dashed var(--line); padding-top: 8px; flex: 1 1 auto; }
+  .preview-section.preview-meta-right {
+    margin-left: auto;
+    border-top: none;
+    padding: 0 14px 10px;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  /* META 왼쪽/오른쪽을 한 줄로 배치 */
+  .preview-meta-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 14px 12px;
+    border-top: 1px dashed var(--line);
+  }
+  .preview-meta-row .left-group {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .preview-meta-row .right-group {
+    margin-left: auto;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .preview-section .empty-hint {
+    color: #cbd5d2;
+    font-size: 11px;
+    font-style: italic;
+  }
+</style>
+</head>
+<body>
+
+<header class="page">
+  <h1>이번 주 업무 카드 — 레이아웃 제안 (3안 비교) + 드래그 편집</h1>
+  <p>현재 카드의 가시성 문제를 해결한 3가지 안을 비교하고, 마지막에 본인이 직접 위치를 옮겨 시도해볼 수 있습니다.</p>
+</header>
+
+<!-- ============ 현재 (Before) ============ -->
+<h2>📌 현재 — 비교 기준</h2>
+<p class="lead">"진행"이 두 번 나오고(상태 + 진행로그 카운트), 카테고리가 흩어져 있고, 마감일이 코멘트와 같은 위치라 강조 X.</p>
+<div class="card focus" style="border-left-color:var(--info)">
+  <div style="display:flex;align-items:flex-start;gap:8px">
+    <div style="flex:1">
+      <div style="font-weight:700;font-size:14px;margin-bottom:4px">신상품런칭 폴리페놀효소 <span class="chip owner"><span class="av">관</span>관리자</span></div>
+      <div style="color:var(--ink-soft);font-size:12.5px;margin-bottom:8px">아자 간다 신상품 출시한다~!!~</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+        <span class="chip status-doing">진행</span>
+        <span class="chip priority">보통</span>
+        <span class="chip focus">★ 우선순위</span>
+        <span class="chip kpi">월별 분기별 교육&세미나 확인2</span>
+        <span class="chip progress-count">진행 1</span>
+      </div>
+      <div style="display:flex;gap:8px;color:var(--muted);font-size:11.5px">
+        <span>📅 마감 미정</span>
+        <span>💬 코멘트 0</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px"><button class="btn-action">+ 업무 연결</button><button class="btn-icon">🗑</button></div>
+  </div>
+</div>
+
+<!-- ============ V1 ============ -->
+<h2><span class="label-pill v1">V1 추천</span> KPI 상단 배너 + 메타 한 줄 클러스터</h2>
+<p class="lead">KPI를 상단 배너로 강조 → 전략 컨텍스트가 먼저 보임. 상태/우선순위/카운트는 한 줄에 모으고, 마감일과 액션은 우측에 배치.</p>
+<div class="card focus v1-card">
+  <div class="top-kpi">▣ KPI · 월별 분기별 교육&세미나 확인2</div>
+  <div class="title-row">
+    <span class="title">신상품런칭 폴리페놀효소</span>
+    <span class="chip owner"><span class="av">관</span>관리자</span>
+  </div>
+  <div class="detail">아자 간다 신상품 출시한다~!!~</div>
+  <div class="meta-row">
+    <span class="chip status-doing">진행</span>
+    <span class="chip priority">보통</span>
+    <span class="chip focus">★ 우선</span>
+    <span class="meta-divider">·</span>
+    <span class="chip progress-count">📈 진행로그 1</span>
+    <span class="chip comment-count">💬 0</span>
+    <div class="right-cluster">
+      <span class="chip due-ok">📅 마감 미정</span>
+      <button class="btn-action">+ 연결</button>
+      <button class="btn-icon">🗑</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ V2 ============ -->
+<h2><span class="label-pill v2">V2</span> 마감 좌측 컬러바 (D-day 강조 최대화)</h2>
+<p class="lead">마감일을 카드 좌측 컬러바로 시각적으로 가장 강조 (D-3 큰 글씨). 마감 임박/지남 시 자동 빨강. KPI는 카드 안 작은 chip.</p>
+<div class="card focus v2-card">
+  <div class="row">
+    <div class="due-bar danger">
+      <div class="d-day">D-1</div>
+      <div class="d-label">마감 임박</div>
+    </div>
+    <div class="body">
+      <div class="top-kpi">▣ KPI · 월별 분기별 교육&세미나 확인2</div>
+      <div class="title">신상품런칭 폴리페놀효소</div>
+      <div class="detail">아자 간다 신상품 출시한다~!!~</div>
+      <div class="meta-row">
+        <span class="chip owner"><span class="av">관</span>관리자</span>
+        <span class="chip status-doing">진행</span>
+        <span class="chip priority">보통</span>
+        <span class="chip focus">★</span>
+        <span class="chip progress-count">📈 1</span>
+        <span class="chip comment-count">💬 0</span>
+        <div class="right-cluster">
+          <button class="btn-action">+ 연결</button>
+          <button class="btn-icon">🗑</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ V3 ============ -->
+<h2><span class="label-pill v3">V3</span> 우상단 마감+액션 묶음, KPI는 작은 칩</h2>
+<p class="lead">우상단에 마감일·액션 한 묶음(가장 자주 보는 영역). 메타는 카드 하단 한 줄 구분선 아래.</p>
+<div class="card focus v3-card">
+  <div class="top-right-cluster">
+    <span class="chip due-warn">📅 D-3</span>
+    <button class="btn-action">+ 연결</button>
+    <button class="btn-icon">🗑</button>
+  </div>
+  <div class="top-kpi">▣ KPI · 월별 분기별 교육&세미나 확인2</div>
+  <div class="title-row">
+    <span class="title">신상품런칭 폴리페놀효소</span>
+    <span class="chip owner"><span class="av">관</span>관리자</span>
+  </div>
+  <div class="detail">아자 간다 신상품 출시한다~!!~</div>
+  <div class="meta-row">
+    <span class="chip status-doing">진행</span>
+    <span class="chip priority">보통</span>
+    <span class="chip focus">★ 우선</span>
+    <div class="right">
+      <span class="chip progress-count">📈 진행로그 1</span>
+      <span class="chip comment-count">💬 0</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 비교 정리 ============ -->
+<div class="recommend">
+  <strong>비교 요약 — 추천: V1</strong><br>
+  · <strong>V1</strong>: KPI 상단 배너로 전략 맥락 즉시 인지 + 메타 한 줄 클러스터로 정보 밀도. 마감/액션은 우측. <strong>가장 균형 잡힘</strong><br>
+  · <strong>V2</strong>: 마감 D-day가 시각적으로 가장 강하게 보임 → 마감 추적이 핵심인 부서에 적합. 단 KPI 가시성은 V1보다 약간 낮음.<br>
+  · <strong>V3</strong>: "마감+액션"을 우상단으로 그룹화 → 클릭 동선이 가장 짧음. KPI/제목 시각 비중이 V1·V2 사이.<br>
+  공통 개선: "진행" 중복 제거 (상태 chip은 그대로, 진행로그 카운트는 📈 아이콘 + 숫자만), 카테고리 그룹화 (상태계 / 카운트계 / 액션계).
+</div>
+
+<!-- ============ 드래그 편집기 ============ -->
+<h2>🛠 직접 배치 변경하기</h2>
+<p class="lead">왼쪽 부품을 오른쪽 카드의 슬롯에 드래그로 옮겨보세요. 슬롯 안에서도 자리 이동 가능. [초기화]로 V1 기본 배치로 복원.</p>
+
+<div class="editor-wrap">
+  <div class="palette">
+    <h3>📦 부품 (드래그)</h3>
+    <p>아래 부품을 오른쪽 슬롯으로 드래그하세요. 슬롯 안에서도 옮길 수 있어요.</p>
+    <div id="palette" class="palette-items">
+      <!-- 부품들은 JS에서 초기화 시 슬롯에 배치됨 -->
+    </div>
+  </div>
+
+  <div>
+    <div class="editor-card focus" id="editor-card">
+      <div class="slot" data-slot="top" data-label="TOP — KPI/배너 영역"></div>
+      <div class="slot" data-slot="title" data-label="TITLE — 제목/작성자"></div>
+      <div class="slot" data-slot="detail" data-label="DETAIL — 상세 설명"></div>
+      <div class="slot" data-slot="meta-left" data-label="META 왼쪽 — 상태/우선순위 등"></div>
+      <div class="slot" data-slot="meta-right" data-label="META 오른쪽 — 카운트/마감/액션"></div>
+    </div>
+    <div class="editor-actions">
+      <button class="primary" onclick="resetToV1()">↺ V1 기본 배치로 초기화</button>
+      <button onclick="copyConfig()">📋 현재 배치 복사 (개발자에게 전달용)</button>
+    </div>
+
+    <!-- ============ 실시간 미리보기 ============ -->
+    <div class="live-preview-wrap">
+      <div class="live-preview-head">
+        <h3>👀 실시간 미리보기 — 실제 카드 모습</h3>
+        <div class="sim-toggle">
+          <span>마감 시뮬:</span>
+          <button class="sim-btn active" data-sim="normal">통상 (status 컬러)</button>
+          <button class="sim-btn" data-sim="due-soon">마감 D-3 (빨강 강조)</button>
+          <button class="sim-btn" data-sim="done">완료 (초록)</button>
+        </div>
+      </div>
+      <p class="lead" style="margin-top:6px">위에서 부품을 옮기면 실제 적용될 카드 모양이 실시간 반영됩니다. 마감 시뮬 버튼으로 D-day 상황별 모습 확인.</p>
+      <div id="live-preview-card" class="preview-card focus">
+        <!-- JS가 슬롯 데이터로 카드 렌더 -->
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// === 부품 정의 ===
+const ITEMS = [
+  { id: 'kpi', html: '<span class="chip kpi">▣ KPI · 월별 분기별 교육&세미나 확인2</span>', label: 'KPI 칩', defaultSlot: 'top' },
+  { id: 'kpi-banner', html: '<div class="top-kpi" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:var(--accent-soft);color:var(--accent);border-radius:6px;font-size:11.5px;font-weight:700">▣ KPI · 월별 분기별 교육&세미나 확인2</div>', label: 'KPI 배너 (큰 버전)', defaultSlot: null },
+  { id: 'title', html: '<strong style="font-size:14px">신상품런칭 폴리페놀효소</strong>', label: '제목', defaultSlot: 'title' },
+  { id: 'owner', html: '<span class="chip owner"><span class="av">관</span>관리자</span>', label: '작성자', defaultSlot: 'title' },
+  { id: 'detail', html: '<span style="color:var(--ink-soft);font-size:12.5px">아자 간다 신상품 출시한다~!!~</span>', label: '상세 설명', defaultSlot: 'detail' },
+  { id: 'status', html: '<span class="chip status-doing">진행</span>', label: '상태 (진행/대기 등)', defaultSlot: 'meta-left' },
+  { id: 'priority', html: '<span class="chip priority">보통</span>', label: '우선순위 등급', defaultSlot: 'meta-left' },
+  { id: 'focus', html: '<span class="chip focus">★ 우선</span>', label: '★ 우선순위 표시', defaultSlot: 'meta-left' },
+  { id: 'progress-count', html: '<span class="chip progress-count">📈 진행로그 1</span>', label: '진행로그 카운트', defaultSlot: 'meta-right' },
+  { id: 'comment-count', html: '<span class="chip comment-count">💬 0</span>', label: '코멘트 카운트', defaultSlot: 'meta-right' },
+  { id: 'due', html: '<span class="chip due-warn">📅 D-3</span>', label: '마감일 (D-day)', defaultSlot: 'meta-right' },
+  { id: 'add-relation', html: '<button class="btn-action">+ 연결</button>', label: '+ 업무 연결 버튼', defaultSlot: 'meta-right' },
+  { id: 'delete', html: '<button class="btn-icon">🗑</button>', label: '삭제 버튼', defaultSlot: 'meta-right' },
+]
+
+// === 초기 배치 (V1 기본) ===
+function buildAllItems() {
+  const allEls = {}
+  ITEMS.forEach(it => {
+    const el = document.createElement('div')
+    el.className = 'palette-item placed-item'
+    el.draggable = true
+    el.dataset.itemId = it.id
+    el.innerHTML = `${it.html} <span class="key">${it.label}</span>`
+    el.addEventListener('dragstart', onDragStart)
+    el.addEventListener('dragend', onDragEnd)
+    allEls[it.id] = el
+  })
+  return allEls
+}
+
+function placeItems() {
+  // 모든 슬롯/팔레트 비우기
+  document.querySelectorAll('.slot').forEach(s => s.innerHTML = '')
+  document.getElementById('palette').innerHTML = ''
+  const els = buildAllItems()
+  ITEMS.forEach(it => {
+    const target = it.defaultSlot
+      ? document.querySelector(`.slot[data-slot="${it.defaultSlot}"]`)
+      : document.getElementById('palette')
+    if (target) target.appendChild(els[it.id])
+  })
+}
+
+function resetToV1() {
+  placeItems()
+}
+
+function copyConfig() {
+  const config = {}
+  document.querySelectorAll('.slot').forEach(s => {
+    config[s.dataset.slot] = Array.from(s.querySelectorAll('.placed-item')).map(el => el.dataset.itemId)
+  })
+  config['_palette'] = Array.from(document.getElementById('palette').querySelectorAll('.placed-item')).map(el => el.dataset.itemId)
+  const text = JSON.stringify(config, null, 2)
+  navigator.clipboard.writeText(text).then(
+    () => alert('현재 배치가 클립보드에 복사되었습니다. 개발자에게 전달하세요.\n\n' + text),
+    () => prompt('수동으로 복사하세요:', text),
+  )
+}
+
+// === 드래그 핸들러 ===
+let dragged = null
+
+function onDragStart(e) {
+  dragged = e.currentTarget
+  dragged.classList.add('dragging')
+  e.dataTransfer.effectAllowed = 'move'
+  e.dataTransfer.setData('text/plain', dragged.dataset.itemId)
+}
+function onDragEnd(e) {
+  if (dragged) dragged.classList.remove('dragging')
+  document.querySelectorAll('.slot').forEach(s => s.classList.remove('drag-over'))
+  dragged = null
+}
+
+// 슬롯 + 팔레트가 drop target
+function setupDropTargets() {
+  const targets = [...document.querySelectorAll('.slot'), document.getElementById('palette')]
+  targets.forEach(t => {
+    t.addEventListener('dragover', e => {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      if (t.classList.contains('slot')) t.classList.add('drag-over')
+    })
+    t.addEventListener('dragleave', e => {
+      if (t.classList.contains('slot')) t.classList.remove('drag-over')
+    })
+    t.addEventListener('drop', e => {
+      e.preventDefault()
+      if (t.classList.contains('slot')) t.classList.remove('drag-over')
+      if (!dragged) return
+      // 슬롯 내부 위치 계산 (가장 가까운 children 앞에 삽입)
+      const after = getDragAfterElement(t, e.clientX, e.clientY)
+      if (after == null) t.appendChild(dragged)
+      else t.insertBefore(dragged, after)
+    })
+  })
+}
+
+function getDragAfterElement(container, x, y) {
+  const draggables = [...container.querySelectorAll('.placed-item:not(.dragging)')]
+  return draggables.reduce((closest, child) => {
+    const box = child.getBoundingClientRect()
+    const offset = (x - (box.left + box.width / 2))
+    if (offset < 0 && offset > closest.offset) {
+      return { offset, element: child }
+    }
+    return closest
+  }, { offset: Number.NEGATIVE_INFINITY }).element
+}
+
+// === 실시간 미리보기 렌더링 ===
+let currentSim = 'normal' // 'normal' | 'due-soon' | 'done'
+
+function renderLivePreview() {
+  const card = document.getElementById('live-preview-card')
+  if (!card) return
+  // 시뮬 모드별 클래스 (status 컬러바 결정)
+  const simClass = currentSim === 'due-soon' ? 'sim-due-soon'
+    : currentSim === 'done' ? 'sim-done'
+    : 'sim-doing'
+  card.className = `preview-card focus ${simClass}`
+
+  const slots = ['top', 'title', 'detail', 'meta-left', 'meta-right']
+  // 각 슬롯에 들어있는 item들의 inner HTML(label 제외)을 추출
+  function getSlotItems(slotKey) {
+    const slot = document.querySelector(`.slot[data-slot="${slotKey}"]`)
+    if (!slot) return []
+    return Array.from(slot.querySelectorAll('.placed-item')).map(el => {
+      // .placed-item 안에 chip + .key 라벨이 있음. 라벨 제외하고 첫 chip만 추출
+      const clone = el.cloneNode(true)
+      const keyEl = clone.querySelector('.key')
+      if (keyEl) keyEl.remove()
+      return clone.innerHTML.trim()
+    }).filter(Boolean)
+  }
+
+  const topItems = getSlotItems('top')
+  const titleItems = getSlotItems('title')
+  const detailItems = getSlotItems('detail')
+  const metaLeftItems = getSlotItems('meta-left')
+  const metaRightItems = getSlotItems('meta-right')
+
+  let html = ''
+  if (topItems.length > 0) {
+    html += `<div class="preview-section preview-top">${topItems.join(' ')}</div>`
+  }
+  if (titleItems.length > 0) {
+    html += `<div class="preview-section preview-title">${titleItems.join(' ')}</div>`
+  }
+  if (detailItems.length > 0) {
+    html += `<div class="preview-section preview-detail">${detailItems.join(' ')}</div>`
+  }
+  if (metaLeftItems.length > 0 || metaRightItems.length > 0) {
+    html += `<div class="preview-meta-row">`
+    if (metaLeftItems.length > 0) {
+      html += `<div class="left-group">${metaLeftItems.join(' ')}</div>`
+    }
+    if (metaRightItems.length > 0) {
+      html += `<div class="right-group">${metaRightItems.join(' ')}</div>`
+    }
+    html += `</div>`
+  }
+  if (!html) {
+    html = '<div class="preview-section empty-hint" style="text-align:center">슬롯에 부품을 배치하면 여기 미리보기가 표시됩니다</div>'
+  }
+  card.innerHTML = html
+}
+
+// 시뮬 토글 버튼
+function setupSimToggle() {
+  document.querySelectorAll('.sim-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.sim-btn').forEach(b => b.classList.remove('active'))
+      btn.classList.add('active')
+      currentSim = btn.dataset.sim
+      renderLivePreview()
+    })
+  })
+}
+
+// 부품 이동 후 미리보기 업데이트 — drop 핸들러 + onDragEnd에 hook
+const _origSetupDropTargets = setupDropTargets
+setupDropTargets = function() {
+  _origSetupDropTargets()
+  // drop 후 자동 갱신
+  const targets = [...document.querySelectorAll('.slot'), document.getElementById('palette')]
+  targets.forEach(t => {
+    t.addEventListener('drop', () => {
+      // drop 이벤트는 기존 핸들러 후에 실행됨 (setTimeout으로 DOM 갱신 후 렌더)
+      setTimeout(renderLivePreview, 0)
+    })
+  })
+}
+
+// 초기화
+document.addEventListener('DOMContentLoaded', () => {
+  placeItems()
+  setupDropTargets()
+  setupSimToggle()
+  renderLivePreview()
+})
+
+// resetToV1 호출 시도 미리보기 갱신
+const _origResetToV1 = resetToV1
+resetToV1 = function() {
+  _origResetToV1()
+  renderLivePreview()
+}
+</script>
+
+</body>
+</html>

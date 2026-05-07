@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>이번 주 업무 입력 폼 — 안 비교</title>
+<style>
+  body {
+    margin: 0;
+    padding: 32px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Pretendard, sans-serif;
+    background: #f5f7f6;
+    color: #18211d;
+    font-size: 13px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: #6b7280; margin: 0 0 22px; font-size: 13px; }
+
+  .tabs { display: flex; gap: 4px; margin-bottom: 18px; }
+  .tab {
+    padding: 8px 16px;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px 8px 0 0;
+    cursor: pointer;
+    font-weight: 600;
+    color: #6b7280;
+  }
+  .tab.active {
+    background: #14b8a6;
+    color: white;
+    border-color: #14b8a6;
+  }
+
+  .card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 22px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    max-width: 720px;
+  }
+  .card h2 {
+    font-size: 15px;
+    margin: 0 0 14px;
+    color: #14b8a6;
+  }
+  .card .desc {
+    font-size: 12px;
+    color: #6b7280;
+    margin: 0 0 18px;
+    padding: 8px 12px;
+    background: rgba(20,184,166,0.06);
+    border-left: 3px solid #14b8a6;
+    border-radius: 4px;
+  }
+
+  label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 4px;
+  }
+
+  input[type=text], input[type=date], select, textarea {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: inherit;
+    box-sizing: border-box;
+    margin-bottom: 12px;
+  }
+  textarea { resize: vertical; min-height: 56px; line-height: 1.5; }
+
+  .row { display: flex; gap: 8px; margin-bottom: 12px; }
+  .row > * { flex: 1; margin-bottom: 0; }
+
+  .section-title {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 700; color: #14b8a6;
+    margin: 18px 0 8px; padding-top: 12px;
+    border-top: 1px dashed #e5e7eb;
+  }
+  .section-title:first-of-type { border-top: none; padding-top: 0; }
+
+  .group-box {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 14px;
+    margin-bottom: 10px;
+    background: #fafbfa;
+  }
+  .group-box.active { border-color: #14b8a6; background: rgba(20,184,166,0.04); }
+  .group-box label { color: #14b8a6; }
+
+  .check-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+  .check-row input[type=checkbox] { width: auto; margin: 0; }
+  .check-row label { display: inline; font-weight: 500; color: #374151; margin: 0; }
+
+  .btn-add {
+    background: #14b8a6;
+    color: white;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 13px;
+    margin-top: 8px;
+  }
+  .btn-add:hover { background: #0d9488; }
+
+  .info-pop {
+    margin: 10px 0;
+    padding: 12px 14px;
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    border-radius: 8px;
+    font-size: 12px;
+    color: #92400e;
+    display: none;
+  }
+  .info-pop.show { display: block; }
+  .info-pop strong { display: block; margin-bottom: 4px; color: #b45309; }
+  .info-pop button {
+    margin-top: 8px;
+    margin-right: 4px;
+    padding: 5px 10px;
+    border: 1px solid rgba(245,158,11,0.5);
+    background: white;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .info-pop button.primary {
+    background: #f59e0b;
+    color: white;
+    border-color: #f59e0b;
+  }
+
+  /* 후보 row 클릭형 */
+  .candidate-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    margin: 6px 0;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    border-radius: 8px;
+    background: white;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .candidate-row:hover {
+    background: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.7);
+    transform: translateX(2px);
+  }
+  .candidate-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .candidate-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+  }
+  .candidate-meta {
+    font-size: 11px;
+    color: #92400e;
+  }
+  .candidate-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .candidate-actions .primary {
+    margin: 0;
+    padding: 6px 14px;
+    font-size: 12px;
+    background: #0d7a6e;
+    border: 1px solid #0d7a6e;
+    color: white;
+    font-weight: 600;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .candidate-actions .primary:hover {
+    background: #14b8a6;
+    border-color: #14b8a6;
+  }
+  .candidate-actions .secondary {
+    margin: 0;
+    padding: 6px 12px;
+    font-size: 12px;
+    background: white;
+    border: 1px solid #d1d5db;
+    color: #6b7280;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .candidate-actions .secondary:hover {
+    background: #f3f4f6;
+    border-color: #9ca3af;
+    color: #374151;
+  }
+  .candidate-row.picked-parent {
+    background: rgba(20, 184, 166, 0.12);
+    border-color: rgba(20, 184, 166, 0.6);
+  }
+  .candidate-row.picked-parent .hint {
+    color: #0d7a6e;
+  }
+  .skip-row {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed rgba(245, 158, 11, 0.4);
+    text-align: center;
+  }
+  .skip-row button {
+    background: white;
+    border: 1px dashed #d1d5db;
+    color: #6b7280;
+    width: 100%;
+    padding: 6px;
+  }
+
+  .annotation {
+    margin: 16px 0 0;
+    padding: 12px 14px;
+    background: #f3f4f6;
+    border-radius: 6px;
+    font-size: 11px;
+    color: #6b7280;
+    line-height: 1.6;
+  }
+  .annotation strong { color: #374151; }
+</style>
+</head>
+<body>
+
+<h1>이번 주 업무 입력 폼 — UX 비교</h1>
+<p class="lead">두 안을 클릭하며 시각적으로 비교해보세요. 실제 동작은 단순화되어 있습니다.</p>
+
+<div class="tabs">
+  <button class="tab active" onclick="show('a1')">안 1: 메인 폼 통합</button>
+  <button class="tab" onclick="show('a3')">안 3: 현재 + 자동 추천 팝업</button>
+</div>
+
+<!-- 안 1: 메인 폼 통합 -->
+<div class="card" id="a1">
+  <h2>안 1 — 메인 폼에 KPI / 이전 업무 둘 다</h2>
+  <div class="desc">
+    부모 관계(KPI / 이전 task)를 메인 폼에 명시 노출. 모든 case가 분명함. 폼이 길어지는 trade-off.
+  </div>
+
+  <label>업무명</label>
+  <input type="text" placeholder="예: 매크로작업 자동화 검토">
+
+  <div class="section-title">▶ 어디에 연결? (둘 중 하나는 권장)</div>
+
+  <div class="group-box" id="kpi-group">
+    <label>KPI 선택</label>
+    <select onchange="onKpiChange(this)">
+      <option value="">— 선택 안 함 —</option>
+      <optgroup label="개인 KPI">
+        <option>리더학습</option>
+        <option>혁신촉진</option>
+      </optgroup>
+      <optgroup label="내 부서 (커머스)">
+        <option>커머스팀 총 매출액</option>
+        <option>영업이익A 개선</option>
+        <option>신상품 출시</option>
+      </optgroup>
+    </select>
+  </div>
+
+  <div class="group-box">
+    <label>이전 업무 후속? <span style="font-weight:400;color:#6b7280;font-size:11px;">(선택 시 KPI 자동 inherit)</span></label>
+    <input type="text" placeholder="검색 (모든 히스토리에서 title 매칭)" oninput="filterPrev(this)">
+    <select id="prev-select">
+      <option value="">— 선택 안 함 (= 신규 업무) —</option>
+      <option>잘뜨는거맞네 · 2026-W18</option>
+      <option>홈쇼핑 매출체크 · 2026-W19</option>
+      <option>출고체크 · 2026-W19</option>
+      <option>현대홈쇼핑 신상품기획 · 2026-W18</option>
+    </select>
+  </div>
+
+  <div class="section-title">▶ 세부 설명</div>
+  <textarea placeholder="진행 내용, 산출물, 막힌 지점 (Enter로 줄바꿈)"></textarea>
+
+  <div class="section-title">▶ 메타</div>
+  <div class="check-row">
+    <input type="checkbox" id="recur" onchange="toggleRecur()">
+    <label for="recur">정기 반복</label>
+    <select id="recur-period" disabled style="margin: 0; max-width: 180px;">
+      <option>매주</option>
+      <option>매월</option>
+      <option>분기</option>
+    </select>
+  </div>
+  <input type="text" placeholder="태그 (선택, 쉼표로 구분 — 예: 보고, 회의, 분석)">
+
+  <div class="row">
+    <select><option>대기</option><option>진행</option><option>검토</option><option>보류</option></select>
+    <select><option>높음</option><option>보통</option><option>낮음</option></select>
+    <input type="date">
+  </div>
+
+  <button class="btn-add">+ 추가</button>
+
+  <div class="annotation">
+    <strong>장점:</strong> 모든 case가 명시적. 흐름도 구조와 직접 1:1 대응.<br>
+    <strong>단점:</strong> 폼이 길고 입력 부담 ↑. 첫 사용자에 혼란 가능.<br>
+    <strong>입력 case별 흐름도 결과:</strong><br>
+    · KPI만 → 차트에 KPI → 이 task<br>
+    · 이전 task만 → 차트에 prev → this (KPI는 prev에서 자동 inherit)<br>
+    · 둘 다 → 차트에 KPI ↔ prev ↔ this 그래프<br>
+    · 둘 다 비움 → 독립 task (이런 케이스는 임시/급한 일)
+  </div>
+</div>
+
+<!-- 안 3: 현재 + 자동 추천 -->
+<div class="card" id="a3" style="display:none;">
+  <h2>안 3 — 현재 폼 + 후속 자동 추천 팝업</h2>
+  <div class="desc">
+    현재 폼 거의 그대로. KPI 선택 시 같은 KPI를 가진 최근 task가 있으면 "이거 후속인가요?" 팝업이 떠서 한 번 클릭으로 부모 연결.
+  </div>
+
+  <label>업무명</label>
+  <input type="text" placeholder="예: 매크로작업 자동화 검토">
+
+  <label>KPI 선택</label>
+  <select onchange="onKpiChange3(this)">
+    <option value="">— 선택 안 함 —</option>
+    <optgroup label="개인 KPI">
+      <option value="leader">리더학습</option>
+      <option value="innov">혁신촉진</option>
+    </optgroup>
+    <optgroup label="내 부서 (커머스)">
+      <option value="sales">커머스팀 총 매출액</option>
+      <option value="profit">영업이익A 개선</option>
+      <option value="newprod">신상품 출시</option>
+    </optgroup>
+  </select>
+
+  <!-- 자동 추천 팝업 (개선 v3) -->
+  <div class="info-pop" id="recommend-pop">
+    <strong>💡 이 KPI에 진행 중 업무가 있어요. 새 업무를 어떻게 등록할까요?</strong>
+    <div id="candidate-rows">
+      <div class="candidate-row">
+        <div class="candidate-main">
+          <span class="candidate-title">잘뜨는거맞네</span>
+          <span class="candidate-meta">3일 전 · 진행 중 · 같은 KPI</span>
+        </div>
+        <div class="candidate-actions">
+          <button class="primary" onclick="pickCandidate(this, '잘뜨는거맞네', 'parent')">이 업무 후속으로</button>
+          <button class="secondary" onclick="pickCandidate(this, '잘뜨는거맞네', 'sibling')">동시 진행</button>
+        </div>
+      </div>
+      <div class="candidate-row">
+        <div class="candidate-main">
+          <span class="candidate-title">홈쇼핑 매출체크</span>
+          <span class="candidate-meta">어제 · 진행 중 · 같은 KPI</span>
+        </div>
+        <div class="candidate-actions">
+          <button class="primary" onclick="pickCandidate(this, '홈쇼핑 매출체크', 'parent')">이 업무 후속으로</button>
+          <button class="secondary" onclick="pickCandidate(this, '홈쇼핑 매출체크', 'sibling')">동시 진행</button>
+        </div>
+      </div>
+    </div>
+    <div class="skip-row">
+      <button onclick="dismissRecommend()">→ 건너뛰기 (위 업무들과 무관한 신규 업무)</button>
+    </div>
+  </div>
+
+  <label>세부 설명</label>
+  <textarea placeholder="진행 내용, 산출물, 막힌 지점 (Enter로 줄바꿈)"></textarea>
+
+  <div class="row">
+    <select><option>대기</option><option>진행</option><option>검토</option><option>보류</option></select>
+    <select><option>높음</option><option>보통</option><option>낮음</option></select>
+    <input type="date">
+  </div>
+
+  <div class="check-row">
+    <input type="checkbox" id="recur3" onchange="toggleRecur3()">
+    <label for="recur3">정기 반복</label>
+    <select id="recur-period3" disabled style="margin: 0; max-width: 180px;">
+      <option>매주</option>
+      <option>매월</option>
+      <option>분기</option>
+    </select>
+  </div>
+
+  <button class="btn-add">+ 추가</button>
+
+  <div class="annotation">
+    <strong>장점:</strong> 폼이 짧고 직관적. 신규 업무 작성이 빠름. 부모 연결은 KPI 선택만으로 자동 제안.<br>
+    <strong>단점:</strong> 팝업 추천 인식률에 의존 (아래 분석 참조).<br>
+    <strong>인식률 결정 요소:</strong><br>
+    · 사용자가 KPI를 잘 채워둘 때만 동작<br>
+    · 동일 KPI 가진 진행 중 task가 1개 이상 존재해야 함<br>
+    · "이전 업무 후속" case의 80%는 KPI 같음 → 인식률 70~80% 추정<br>
+    · 나머지 20%(KPI 다른 후속)는 사용자가 + 업무 연결로 직접 추가
+  </div>
+</div>
+
+<script>
+  function show(id) {
+    document.getElementById('a1').style.display = id === 'a1' ? 'block' : 'none';
+    document.getElementById('a3').style.display = id === 'a3' ? 'block' : 'none';
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    event.target.classList.add('active');
+  }
+
+  function onKpiChange(sel) {
+    const grp = document.getElementById('kpi-group');
+    grp.classList.toggle('active', !!sel.value);
+  }
+
+  function filterPrev(input) {
+    const q = input.value.toLowerCase();
+    const sel = document.getElementById('prev-select');
+    Array.from(sel.options).forEach(o => {
+      if (!o.value) return;
+      o.style.display = !q || o.text.toLowerCase().includes(q) ? '' : 'none';
+    });
+  }
+
+  function toggleRecur() {
+    const on = document.getElementById('recur').checked;
+    document.getElementById('recur-period').disabled = !on;
+  }
+
+  // 안 3 — 자동 추천 팝업
+  function onKpiChange3(sel) {
+    const pop = document.getElementById('recommend-pop');
+    if (sel.value) {
+      pop.classList.add('show');
+    } else {
+      pop.classList.remove('show');
+    }
+  }
+
+  function pickCandidate(btnEl, title, kind) {
+    const row = btnEl.closest('.candidate-row');
+    document.querySelectorAll('.candidate-row').forEach(r => r.classList.remove('picked-parent'));
+    row.classList.add('picked-parent');
+    setTimeout(() => {
+      const msg = kind === 'parent'
+        ? `✓ "${title}" 후속으로 등록됩니다.\n차트에 ${title} → 이 업무 화살표가 그려져요.`
+        : `✓ "${title}"과 동시 진행하는 업무로 등록됩니다.\n차트에 ${title} ⋯ 이 업무 점선이 그려져요.`;
+      alert(msg);
+      document.getElementById('recommend-pop').classList.remove('show');
+    }, 250);
+  }
+  function dismissRecommend() {
+    document.getElementById('recommend-pop').classList.remove('show');
+    alert('💡 어느 흐름과도 무관한 신규 업무로 등록됩니다.\n차트에 KPI → 이 업무 화살표만 그려져요.');
+  }
+
+  function toggleRecur3() {
+    const on = document.getElementById('recur3').checked;
+    document.getElementById('recur-period3').disabled = !on;
+  }
+</script>
+
+</body>
+</html>

@@ -1,0 +1,917 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>2027년 — AI 도입 완료 시 미래 화면 구상</title>
+<style>
+  :root {
+    --line: #e3e8e5;
+    --line-strong: #cfd6d2;
+    --ink: #18211d;
+    --ink-soft: #4d5b54;
+    --muted: #7a857f;
+    --accent: #0d7a6e;
+    --accent-soft: #e6f4f1;
+    --warn: #f59e0b;
+    --warn-soft: #fef3c7;
+    --warn-strong: #b45309;
+    --info: #3b82f6;
+    --info-soft: #dbeafe;
+    --danger: #ef4444;
+    --danger-soft: #fee2e2;
+    --ok: #10b981;
+    --ok-soft: #d1fae5;
+    --purple: #9333ea;
+    --purple-soft: #faf5ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #f5f7f6;
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 30px 28px;
+  }
+  header.page {
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 2px solid var(--accent);
+  }
+  header.page h1 { margin: 0 0 4px; font-size: 22px; }
+  header.page p { margin: 0; color: var(--muted); }
+  header.page .future-tag {
+    display: inline-block;
+    padding: 3px 12px;
+    background: linear-gradient(90deg, var(--accent), var(--purple));
+    color: white;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    margin-left: 8px;
+    letter-spacing: 0.3px;
+  }
+
+  .feat-section {
+    margin-bottom: 32px;
+  }
+  .feat-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .feat-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: var(--accent);
+    color: white;
+    border-radius: 50%;
+    font-weight: 700;
+    font-size: 12px;
+  }
+  .feat-head h2 { margin: 0; font-size: 16px; }
+  .feat-lead {
+    color: var(--muted);
+    font-size: 12px;
+    margin: 0 0 12px;
+  }
+
+  /* === 공통 카드 === */
+  .panel {
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px 18px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  }
+
+  /* === ① 개인 AI 대시보드 === */
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: 320px 1fr 1fr;
+    gap: 14px;
+  }
+  .stat-card {
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 18px;
+    position: relative;
+  }
+  .stat-card.greeting {
+    background: linear-gradient(135deg, var(--accent), #1e7c93);
+    color: white;
+    border: none;
+  }
+  .stat-card.greeting h3 { margin: 0 0 6px; font-size: 16px; }
+  .stat-card.greeting p { margin: 0; opacity: 0.9; font-size: 12.5px; line-height: 1.5; }
+  .stat-card.greeting .you {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.25);
+    font-size: 11.5px;
+  }
+  .stat-card.greeting .you strong { font-size: 14px; }
+
+  .stat-num {
+    font-size: 26px;
+    font-weight: 800;
+    color: var(--accent);
+    line-height: 1.2;
+  }
+  .stat-num.warn { color: var(--warn-strong); }
+  .stat-num.ok { color: var(--ok); }
+  .stat-label {
+    font-size: 11.5px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .stat-trend {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-top: 6px;
+    padding: 2px 8px;
+    background: var(--ok-soft);
+    color: #065f46;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .stat-trend.down { background: var(--warn-soft); color: var(--warn-strong); }
+  .stat-mini-chart {
+    margin-top: 10px;
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 36px;
+  }
+  .stat-mini-chart .bar {
+    flex: 1;
+    background: var(--accent-soft);
+    border-radius: 2px 2px 0 0;
+    position: relative;
+  }
+  .stat-mini-chart .bar.now {
+    background: var(--accent);
+  }
+  .stat-mini-chart .bar::after {
+    content: attr(data-week);
+    position: absolute;
+    bottom: -14px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 9px;
+    color: var(--muted);
+  }
+
+  /* === ② 자연어 검색 === */
+  .search-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: white;
+    border: 2px solid var(--purple);
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(147, 51, 234, 0.08);
+  }
+  .search-bar .ai-tag {
+    background: linear-gradient(90deg, var(--purple), var(--info));
+    color: white;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .search-bar input {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-size: 13.5px;
+    background: transparent;
+    color: var(--ink);
+  }
+  .search-bar input::placeholder { color: var(--muted); font-style: italic; }
+  .search-results {
+    margin-top: 12px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .search-result-card {
+    background: var(--purple-soft);
+    border: 1px solid #e9d5ff;
+    border-left: 3px solid var(--purple);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12.5px;
+  }
+  .search-result-card .match-score {
+    display: inline-block;
+    background: var(--purple);
+    color: white;
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .search-result-card strong { display: block; margin-bottom: 3px; font-size: 13px; }
+  .search-result-card .meta { color: var(--muted); font-size: 11px; }
+  .search-result-card .excerpt {
+    margin-top: 5px;
+    font-size: 11.5px;
+    color: var(--ink-soft);
+    background: white;
+    padding: 5px 8px;
+    border-radius: 5px;
+    border-left: 2px solid var(--purple);
+  }
+
+  /* === ③ 위험 task 조기 감지 === */
+  .risk-banner {
+    background: linear-gradient(90deg, #fff7ed, #fef3c7, #fff7ed);
+    border: 1px solid var(--warn);
+    border-left: 4px solid var(--warn-strong);
+    border-radius: 10px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .risk-banner .ico { font-size: 22px; }
+  .risk-banner .body { flex: 1; }
+  .risk-banner strong { color: var(--warn-strong); display: block; margin-bottom: 2px; }
+  .risk-banner .deets { font-size: 11.5px; color: var(--ink-soft); }
+  .risk-banner .ai-pred {
+    background: var(--purple-soft);
+    color: var(--purple);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10.5px;
+    font-weight: 700;
+    margin-top: 4px;
+    display: inline-block;
+  }
+  .risk-banner button {
+    padding: 6px 12px;
+    background: var(--warn);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 11.5px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  /* === ④ 유사 task 추천 (task 작성 시) === */
+  .similar-recommend {
+    margin-top: 10px;
+    padding: 10px 14px;
+    background: var(--purple-soft);
+    border: 1px solid #e9d5ff;
+    border-radius: 10px;
+  }
+  .similar-recommend .ico-head {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--purple);
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .similar-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .similar-item {
+    background: white;
+    border: 1px solid #e9d5ff;
+    border-radius: 6px;
+    padding: 7px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .similar-item .match-pct {
+    background: var(--purple);
+    color: white;
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .similar-item .title { flex: 1; font-weight: 600; }
+  .similar-item .meta { color: var(--muted); font-size: 10.5px; }
+  .similar-item button {
+    padding: 3px 8px;
+    background: white;
+    border: 1px solid var(--purple);
+    color: var(--purple);
+    border-radius: 5px;
+    font-size: 11px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  /* === ⑤ 자동 카테고리 === */
+  .cat-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: white;
+  }
+  .cat-chip.협상 { background: #f97316; }
+  .cat-chip.기획 { background: var(--info); }
+  .cat-chip.운영 { background: var(--ok); }
+  .cat-chip.보고 { background: var(--purple); }
+  .cat-distribution {
+    display: flex;
+    gap: 4px;
+    margin-top: 8px;
+    height: 28px;
+    border-radius: 6px;
+    overflow: hidden;
+    font-size: 10px;
+    color: white;
+  }
+  .cat-distribution > div {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  /* === ⑥ 미래의 history 카드 (모든 기능 통합) === */
+  .future-card {
+    background: white;
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--ok);
+    border-radius: 10px;
+    padding: 0;
+    overflow: hidden;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+    position: relative;
+  }
+  .future-card .bookmark-btn {
+    position: absolute;
+    top: 12px;
+    right: 14px;
+    background: white;
+    border: 1px solid var(--line-strong);
+    border-radius: 50%;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--muted);
+    transition: all 0.12s;
+  }
+  .future-card .bookmark-btn.active {
+    background: var(--warn);
+    color: white;
+    border-color: var(--warn);
+  }
+  .future-card .top-pad {
+    padding: 14px 18px 12px;
+  }
+  .future-card .head-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .future-card .head-title {
+    font-size: 14px;
+    font-weight: 700;
+    flex: 1;
+  }
+  .future-card .head-meta {
+    color: var(--muted);
+    font-size: 11.5px;
+    margin-bottom: 8px;
+  }
+  .future-card .summary-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  .summary-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 9px;
+    background: #f9fbfa;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 11px;
+    color: var(--ink-soft);
+    font-weight: 600;
+  }
+  .summary-chip.kpi { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+
+  /* AI 분석 칩 (자동 태깅 결과) */
+  .ai-tags {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+    padding: 8px 14px;
+    background: var(--purple-soft);
+    border-top: 1px solid #e9d5ff;
+    border-bottom: 1px solid #e9d5ff;
+    font-size: 11px;
+  }
+  .ai-tags .ai-icon {
+    color: var(--purple);
+    font-weight: 700;
+  }
+  .ai-pill {
+    padding: 1px 7px;
+    background: white;
+    border: 1px solid #e9d5ff;
+    border-radius: 999px;
+    font-size: 10.5px;
+    color: var(--purple);
+    font-weight: 600;
+  }
+
+  /* AI 자동 요약 */
+  .ai-summary {
+    background: linear-gradient(135deg, var(--purple-soft), #fff7ed);
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    line-height: 1.55;
+  }
+  .ai-summary strong { color: var(--purple); display: block; margin-bottom: 3px; font-size: 11.5px; }
+
+  /* 유사 task link (카드 하단) */
+  .similar-link {
+    background: #fafbfa;
+    border-top: 1px dashed var(--line);
+    padding: 8px 14px;
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .similar-link .ai-icon {
+    color: var(--purple);
+    font-weight: 700;
+  }
+  .similar-link a {
+    color: var(--accent);
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .similar-link a:hover { text-decoration: underline; }
+
+  /* === ⑦ 카드 hover 미리보기 (툴팁 형태) === */
+  .preview-tooltip {
+    position: absolute;
+    top: 0;
+    left: 100%;
+    margin-left: 14px;
+    width: 280px;
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    font-size: 11.5px;
+    pointer-events: none;
+    opacity: 1;
+  }
+  .preview-tooltip::before {
+    content: '';
+    position: absolute;
+    left: -8px;
+    top: 24px;
+    width: 0;
+    height: 0;
+    border-style: solid;
+    border-width: 8px 8px 8px 0;
+    border-color: transparent var(--line) transparent transparent;
+  }
+  .preview-tooltip h4 {
+    margin: 0 0 4px;
+    font-size: 11px;
+    color: var(--muted);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .preview-tooltip .recent-log {
+    background: var(--info-soft);
+    border-left: 2px solid var(--info);
+    padding: 5px 8px;
+    margin-bottom: 6px;
+    border-radius: 0 6px 6px 0;
+    line-height: 1.45;
+  }
+  .preview-tooltip .recent-comment {
+    background: #fef9c3;
+    border-left: 2px solid var(--warn);
+    padding: 5px 8px;
+    border-radius: 0 6px 6px 0;
+    line-height: 1.45;
+  }
+  .preview-tooltip .small {
+    color: var(--muted);
+    font-size: 10px;
+    display: block;
+    margin-bottom: 2px;
+  }
+
+  /* === 단축키 안내 === */
+  .shortcut-bar {
+    display: flex;
+    gap: 12px;
+    padding: 10px 14px;
+    background: #f9fbfa;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    font-size: 11.5px;
+    color: var(--ink-soft);
+  }
+  .shortcut-bar .key {
+    background: white;
+    border: 1px solid var(--line-strong);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 10.5px;
+    color: var(--ink);
+    font-weight: 700;
+  }
+
+  /* === 권한별 다른 화면 안내 === */
+  .role-toggle {
+    display: inline-flex;
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 10px;
+  }
+  .role-toggle button {
+    padding: 5px 14px;
+    background: white;
+    border: none;
+    cursor: pointer;
+    font-size: 11.5px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .role-toggle button.active {
+    background: var(--accent);
+    color: white;
+  }
+
+  /* AI 비용 카운터 */
+  .ai-meta-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 24px;
+    padding: 8px 14px;
+    background: linear-gradient(135deg, #faf5ff, #fef3c7);
+    border: 1px solid #e9d5ff;
+    border-radius: 8px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .ai-meta-bar strong { color: var(--purple); }
+
+  /* 미니 차트 */
+  .mini-line-chart {
+    width: 100%;
+    height: 100px;
+    margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+
+<header class="page">
+  <h1>🚀 미래 화면 — AI 도입 + UX 개선 통합 비전 <span class="future-tag">2027년 예상</span></h1>
+  <p>현재 데이터 누적 → AI 분석/추천이 실제로 작동했을 때의 풀 화면. 모든 기능을 한 페이지로.</p>
+</header>
+
+<!-- ============ ① 개인 AI 대시보드 (홈 상단) ============ -->
+<div class="feat-section">
+  <div class="feat-head">
+    <span class="feat-num">1</span>
+    <h2>개인 AI 대시보드 — 홈 진입 시 첫 화면</h2>
+  </div>
+  <p class="feat-lead">자기 vs 자기 지난 달 비교. 동료 비교 X (평가 부담 회피).</p>
+  <div class="dashboard-grid">
+    <!-- 인사말 + 핵심 -->
+    <div class="stat-card greeting">
+      <h3>👋 김지수님, 좋은 오전입니다</h3>
+      <p>이번 주는 <strong>오후 2~4시</strong>가 가장 효율 높은 시간이에요. 그때 우선순위 업무 배치를 추천드려요.</p>
+      <div class="you">
+        <strong>이번 달 완료 12건</strong> · 지난 달 대비 +2건 ↑
+      </div>
+    </div>
+
+    <!-- 평균 작업 기간 -->
+    <div class="stat-card">
+      <div class="stat-num">6.4일</div>
+      <div class="stat-label">평균 작업 기간 (이번 달)</div>
+      <div class="stat-trend down">▼ 1.2일 빠름 (지난 달 대비)</div>
+      <div class="stat-mini-chart">
+        <div class="bar" data-week="W1" style="height:60%"></div>
+        <div class="bar" data-week="W2" style="height:75%"></div>
+        <div class="bar" data-week="W3" style="height:55%"></div>
+        <div class="bar now" data-week="W4" style="height:48%"></div>
+      </div>
+    </div>
+
+    <!-- 막힘 비율 -->
+    <div class="stat-card">
+      <div class="stat-num warn">15%</div>
+      <div class="stat-label">막힘 발생 비율</div>
+      <div class="stat-trend">▲ 3%p 개선됨</div>
+      <p style="margin-top:8px;font-size:11px;color:var(--muted);line-height:1.5">
+        🤖 가장 자주 막힌 영역: <strong style="color:var(--warn-strong)">가격 협상</strong> (4건 중 2건). 비슷한 task 시작 시 가격 시뮬을 미리 준비하시면 좋아요.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ② 자연어 검색 (RAG) ============ -->
+<div class="feat-section">
+  <div class="feat-head">
+    <span class="feat-num">2</span>
+    <h2>자연어 검색 (RAG) — 의미 기반 history 탐색</h2>
+  </div>
+  <p class="feat-lead">키워드 일치가 아니라 의미 매칭. embedding으로 비슷한 사례 자동 추출.</p>
+  <div class="search-bar">
+    <span class="ai-tag">🔮 AI 검색</span>
+    <input type="text" value="지난 분기 가격 협상에서 막혔던 사례 보여줘" />
+    <span style="color:var(--muted);font-size:11px">↵ Enter</span>
+  </div>
+  <div class="search-results">
+    <div class="search-result-card">
+      <span class="match-score">의미 매칭 92%</span>
+      <strong>현대홈쇼핑 신상품제안 (5/6 완료)</strong>
+      <span class="meta">매출 KPI · 협상 카테고리 · 9일 작업</span>
+      <div class="excerpt">"초기 가격대가 경쟁사 대비 +18% 높아 막힘. 시뮬 3안으로 좁혀 본부장 피드백 후 1안 채택"</div>
+    </div>
+    <div class="search-result-card">
+      <span class="match-score">의미 매칭 87%</span>
+      <strong>롯데홈쇼핑 라이브 캠페인 (4/12 완료)</strong>
+      <span class="meta">매출 KPI · 협상 카테고리 · 6일 작업</span>
+      <div class="excerpt">"방송 슬롯 가격 협상 난항. MD와 추가 미팅 2회로 슬롯 1개 양보받음"</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ③ 위험 task 조기 감지 ============ -->
+<div class="feat-section">
+  <div class="feat-head">
+    <span class="feat-num">3</span>
+    <h2>위험 task 조기 감지 — 막히기 전에 알림</h2>
+  </div>
+  <p class="feat-lead">유사 task 평균 기간 대비 늦어지면 자동 알림. 비슷한 막힘 패턴 학습 후 예측.</p>
+  <div class="risk-banner">
+    <span class="ico">⚠</span>
+    <div class="body">
+      <strong>"신규 입점 브랜드 미팅" 진행이 평소보다 30% 느려졌어요</strong>
+      <div class="deets">
+        유사 task 12건의 평균 D-3 시점에 도달했어야 할 진행도 60% → 현재 35%
+      </div>
+      <span class="ai-pred">🔮 AI 예측: 2일 내 막힘 가능성 73%</span>
+    </div>
+    <button>📋 비슷한 사례 보기</button>
+  </div>
+</div>
+
+<!-- ============ ④ 유사 task 추천 (새 task 작성 시) ============ -->
+<div class="feat-section">
+  <div class="feat-head">
+    <span class="feat-num">4</span>
+    <h2>유사 task 추천 — 새 task 작성 화면</h2>
+  </div>
+  <p class="feat-lead">제목 입력 시 유사한 과거 task의 평균 기간 + 막힌 점 + 산출물 자동 표시.</p>
+
+  <div class="panel">
+    <input type="text" value="GS홈쇼핑 신상품 제안" style="width:100%;padding:8px 12px;border:1px solid var(--line);border-radius:8px;font-size:13px"/>
+
+    <div class="similar-recommend">
+      <div class="ico-head">🔮 AI 분석 — 비슷한 task 3건 발견 (평균 작업 7.5일)</div>
+      <div class="similar-list">
+        <div class="similar-item">
+          <span class="match-pct">95%</span>
+          <span class="title">현대홈쇼핑 신상품제안</span>
+          <span class="meta">9일 · 매출 +78% · ⚠ 가격 협상 막힘 1회</span>
+          <button>📋 참조</button>
+        </div>
+        <div class="similar-item">
+          <span class="match-pct">82%</span>
+          <span class="title">롯데홈쇼핑 라이브 캠페인</span>
+          <span class="meta">6일 · 매출 +52% · ⚠ 슬롯 협상 막힘 1회</span>
+          <button>📋 참조</button>
+        </div>
+        <div class="similar-item">
+          <span class="match-pct">76%</span>
+          <span class="title">CJ홈쇼핑 시즌 기획</span>
+          <span class="meta">8일 · 매출 +45%</span>
+          <button>📋 참조</button>
+        </div>
+      </div>
+      <div style="margin-top:8px;padding:6px 10px;background:white;border-radius:6px;font-size:11.5px;color:var(--ink-soft);border-left:3px solid var(--purple)">
+        💡 <strong>AI 인사이트</strong>: 홈쇼핑 제안 task는 <strong>가격 협상에서 막힘 빈도 67%</strong>. 미리 가격 시뮬 3안 준비를 추천드려요.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ⑤ 자동 카테고리 분류 ============ -->
+<div class="feat-section">
+  <div class="feat-head">
+    <span class="feat-num">5</span>
+    <h2>자동 카테고리 분류 + 비중 분석</h2>
+  </div>
+  <p class="feat-lead">모든 완료 task를 AI가 자동 태깅. 어디에 시간 많이 썼는지 한눈에.</p>
+  <div class="panel">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <strong style="font-size:13px">이번 달 카테고리별 시간 분포</strong>
+      <span style="font-size:11px;color:var(--muted)">총 12건 / 78시간</span>
+    </div>
+    <div class="cat-distribution">
+      <div class="cat-chip 협상" style="background:#f97316;flex:35">협상 35%</div>
+      <div class="cat-chip 기획" style="background:var(--info);flex:28">기획 28%</div>
+      <div class="cat-chip 운영" style="background:var(--ok);flex:22">운영 22%</div>
+      <div class="cat-chip 보고" style="background:var(--purple);flex:15">보고 15%</div>
+    </div>
+    <p style="margin:10px 0 0;font-size:11.5px;color:var(--ink-soft);line-height:1.55">
+      🤖 <strong>AI 인사이트</strong>: 협상(35%)과 보고(15%)가 지난 달보다 +8%p 증가. 본부장이 "라이브 캠페인 강화" 지시 영향으로 보입니다.
+      운영 비중이 줄어든 만큼 위임 가능한 운영 task가 있는지 점검 권장.
+    </p>
+  </div>
+</div>
+
+<!-- ============ ⑥ 미래의 history 카드 (모든 기능 통합) ============ -->
+<div class="feat-section">
+  <div class="feat-head">
+    <span class="feat-num">6</span>
+    <h2>완료 history 카드 — 모든 AI 기능 통합</h2>
+  </div>
+  <p class="feat-lead">즐겨찾기 + 자동 카테고리 + AI 요약 + 유사 task link + hover 미리보기.</p>
+
+  <div style="position:relative">
+    <article class="future-card">
+      <button class="bookmark-btn active" title="즐겨찾기">★</button>
+      <div class="top-pad">
+        <div class="head-line">
+          <div class="head-title">홈쇼핑업무 — 현대홈쇼핑 신상품제안</div>
+        </div>
+        <div class="head-meta">시작 2026.04.28 · 완료 2026.05.06 · 9일</div>
+        <div class="summary-row">
+          <span class="summary-chip kpi">▣ 매출 KPI</span>
+          <span class="summary-chip">⏱ 9일</span>
+          <span class="summary-chip">📈 5</span>
+          <span class="summary-chip">💬 3</span>
+          <span class="summary-chip">📎 2</span>
+        </div>
+      </div>
+
+      <!-- 자동 카테고리 태그 -->
+      <div class="ai-tags">
+        <span class="ai-icon">🤖 AI 자동 분류:</span>
+        <span class="cat-chip 협상">협상</span>
+        <span class="cat-chip 기획">기획</span>
+        <span class="ai-pill">난이도 中</span>
+        <span class="ai-pill">외부 협업 (현대 MD)</span>
+      </div>
+
+      <!-- AI 요약 -->
+      <div class="ai-summary">
+        <strong>🎯 AI 자동 요약</strong>
+        MOQ 5,000개 × 마진 38% 입점 확정. 매출 KPI 78% 기여. 초기 가격이 경쟁사 +18%로 막혔으나 시뮬 3안으로 분기점 돌파. 본부장 검토 2회 · 김지수 실무 1회 협업 끝에 5/6 완료.
+      </div>
+
+      <!-- 유사 task link -->
+      <div class="similar-link">
+        <span class="ai-icon">🔗 비슷한 작업:</span>
+        <a href="#">롯데홈쇼핑 라이브 캠페인 (87% 유사)</a>
+        ·
+        <a href="#">CJ홈쇼핑 시즌 기획 (76%)</a>
+        <span style="margin-left:auto">↓ 펼쳐서 진행로그/코멘트 보기</span>
+      </div>
+    </article>
+
+    <!-- hover 미리보기 (별도 표시) -->
+    <div class="preview-tooltip" style="position:relative;margin:14px 0 0;left:0;width:auto;max-width:480px">
+      <h4>👀 카드 hover 시 미리보기 (펼치지 않아도 즉시 확인)</h4>
+      <div class="recent-log">
+        <span class="small">📈 마지막 진행로그 · 5/5 10:00</span>
+        계약 조건 확정 — MOQ 5,000개 / 마진율 38% / 첫 방송 6/1 (예정)
+      </div>
+      <div class="recent-comment">
+        <span class="small">💬 마지막 코멘트 · 본부장 5/6 09:00</span>
+        수고하셨습니다. 다음 분기 라인업도 부탁드려요.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ⑦ 단축키 ============ -->
+<div class="feat-section">
+  <div class="feat-head">
+    <span class="feat-num">7</span>
+    <h2>단축키 — 키보드 우선 사용자</h2>
+  </div>
+  <p class="feat-lead">생산성 사용자가 마우스 없이도 빠르게 navigate.</p>
+  <div class="shortcut-bar">
+    <span><span class="key">/</span> 자연어 검색</span>
+    <span><span class="key">J</span><span class="key">K</span> 카드 이동</span>
+    <span><span class="key">E</span> 펼침</span>
+    <span><span class="key">B</span> 즐겨찾기 토글</span>
+    <span><span class="key">X</span> 처리 완료</span>
+    <span><span class="key">⌘</span><span class="key">Enter</span> 코멘트 등록</span>
+  </div>
+</div>
+
+<!-- ============ ⑧ 권한별 화면 분리 ============ -->
+<div class="feat-section">
+  <div class="feat-head">
+    <span class="feat-num">8</span>
+    <h2>권한별 다른 정보 — 본부장 vs 팀원</h2>
+  </div>
+  <p class="feat-lead">한 화면에 다 넣지 말고 역할에 필요한 것만.</p>
+
+  <div class="role-toggle">
+    <button class="active">👔 본부장 뷰</button>
+    <button>👤 팀원 뷰</button>
+  </div>
+
+  <div class="panel">
+    <strong style="display:block;margin-bottom:8px;font-size:13px">본부장 뷰에서만 보이는 것</strong>
+    <ul style="margin:0;padding-left:20px;font-size:12.5px;line-height:1.6;color:var(--ink-soft)">
+      <li>팀원별 KPI 기여도 비교 + 인력 재배치 추천</li>
+      <li>부서 효율 진단 (매출 KPI에 누가 가장 빠른가)</li>
+      <li>전체 위험 task 리스트 (개인이 아닌 팀 전체)</li>
+      <li>주간 자동 회고 (이미 적용)</li>
+    </ul>
+    <strong style="display:block;margin:14px 0 8px;font-size:13px">팀원 뷰에서만 보이는 것</strong>
+    <ul style="margin:0;padding-left:20px;font-size:12.5px;line-height:1.6;color:var(--ink-soft)">
+      <li>자기 vs 자기 지난 달 비교 (동료와 비교 X)</li>
+      <li>본인 막힘 빈도 + 효율 시간대 분석</li>
+      <li>본인이 자주 참조한 history (즐겨찾기)</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ============ ⑨ 제외/간소화 ============ -->
+<div class="feat-section">
+  <div class="feat-head">
+    <span class="feat-num">9</span>
+    <h2>제외/간소화 — UX 친화 (덜어내기)</h2>
+  </div>
+  <p class="feat-lead">"있어도 안 쓰는 것"은 과감히 숨기거나 archive로.</p>
+  <div class="panel" style="background:#f9fbfa">
+    <ul style="margin:0;padding-left:20px;font-size:12.5px;line-height:1.7;color:var(--ink-soft)">
+      <li><strong>0인 카운트 chip 자동 숨김</strong>: "코멘트 0" "첨부 0" 같은 영값 chip은 카드 길이만 늘림 → 안 보임</li>
+      <li><strong>당일 완료 task의 타임라인 생략</strong>: 시작 = 끝이라 의미 없음. 요약 헤더만</li>
+      <li><strong>1년+ 오래된 history는 archive 페이지로</strong>: 메인은 최근 6개월 기본. archive는 별도 메뉴</li>
+      <li><strong>정기 반복 task rollup</strong>: 매주 "월간 KPI 리뷰"가 12개 표시되는 대신 "매주 반복 (12건)" 1줄로 접기</li>
+      <li><strong>중복 강조 색상 최소화</strong>: 빨강·노랑·초록 너무 많으면 산만. 위험만 빨강, 정상은 무채색.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ============ AI 비용 메타 ============ -->
+<div class="ai-meta-bar">
+  <span><strong>🤖 이번 달 AI 사용</strong> · 완료 task 자동 태깅 12회 · 자연어 검색 8회 · 위험 예측 3회</span>
+  <span>예상 Gemini 비용 <strong>$2.40</strong> (개인) / <strong>$28</strong> (팀 전체)</span>
+</div>
+
+</body>
+</html>
